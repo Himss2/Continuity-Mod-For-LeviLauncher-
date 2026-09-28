@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Continuity Bedrock",
+  "type": "object",
+  "properties": {
+    "version": {"type":"integer", "readOnly":true},
+    "enabled": {"type":"boolean"},
+    "diagnostics": {"type":"boolean"},
+    "atlasProbe": {"type":"boolean"},
+    "enableLegacyCtm": {"type":"boolean"},
+    "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":256}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "enabled": true,
+  "diagnostics": true,
+  "atlasProbe": true,
+  "enableLegacyCtm": false,
+  "maxDiagnosticLogs": 32
+}

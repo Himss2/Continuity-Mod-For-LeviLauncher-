@@ -1,0 +1,17 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Continuity Bedrock - Native Companion",
+    "description": "Bundled CTM atlas assets for the Continuity Bedrock Levi mod",
+    "uuid": "ad3b64dc-84dc-4c19-8022-7bfbbd29d2e4",
+    "version": [0, 1, 0],
+    "min_engine_version": [1, 26, 0]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "527279e6-2dd6-498d-a53e-6758b107be6a",
+      "version": [0, 1, 0]
+    }
+  ]
+}
