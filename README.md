@@ -100,7 +100,7 @@ BedrockTools already owns Connected Glass. The compiler rejects known glass/pane
 
 ## Bundled validation rule
 
-The bundled `bookshelf.properties` remains as a non-glass validation rule:
+The bundled `bookshelf.properties` remains as a non-glass validation rule. Its four bundled textures are intentionally synthetic high-contrast debug textures, not vanilla-derived artwork, so tile selection is obvious during testing:
 
 ```properties
 matchBlocks=minecraft:bookshelf
