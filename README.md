@@ -5,8 +5,14 @@ Native Bedrock reimplementation experiment inspired by Java Continuity.
 Current target:
 - Minecraft Bedrock **1.26.52.3 arm64**
 - LeviLauncher Android 1.5.24
-- preloader-android 0.2.2
+- preloader-android commit `7ca94daedfa30d6d4c265fc9b591768e8dc1f5af` (the exact preloader bundled by LeviLauncher 1.5.24)
 - Android NDK 28.2.13676358
+
+### LeviLauncher 1.5.24 Mod Menu ABI fix
+
+Version **0.5.1-re-poc** pins the native SDK headers to preloader commit `7ca94daedfa30d6d4c265fc9b591768e8dc1f5af`, which is the exact submodule revision bundled by LeviLauncher 1.5.24.
+
+The previous build used preloader tag `0.2.2` (commit `99c0ae753a4623b8482dde6f4d59cf442283375d`). Its `pl::modmenu::ModuleInfo` layout is older and does not contain the `onKeybind` callback field present in the 1.5.24 runtime. Passing that older C++ struct ABI into the newer runtime caused the startup SIGSEGV inside `pl::modmenu::registerModule`.
 
 ## Levi Mod Menu runtime toggle
 

@@ -9,7 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(MOD_ID "continuity_bedrock" CACHE STRING "LeviLauncher mod package directory name")
 set(MOD_NAME "Continuity Bedrock" CACHE STRING "LeviLauncher mod display name")
 set(MOD_AUTHOR "Himss2" CACHE STRING "LeviLauncher mod author")
-set(MOD_VERSION "0.5.0-re-poc" CACHE STRING "LeviLauncher mod version")
+set(MOD_VERSION "0.5.1-re-poc" CACHE STRING "LeviLauncher mod version")
 set(MOD_LIBRARY_NAME "continuity_bedrock" CACHE STRING "Native library name")
 set(MOD_MINECRAFT_VERSIONS "[\"1.26.52.3\"]" CACHE STRING "Raw JSON array")
 
@@ -17,7 +17,7 @@ include(FetchContent)
 FetchContent_Declare(
     preloader_android
     GIT_REPOSITORY https://github.com/LiteLDev/preloader-android.git
-    GIT_TAG 0.2.2
+    GIT_TAG 7ca94daedfa30d6d4c265fc9b591768e8dc1f5af
     SOURCE_SUBDIR cmake/preloader-sdk
 )
 FetchContent_Declare(
