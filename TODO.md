@@ -1,34 +1,48 @@
 # Roadmap
 
-## Current diagnostic pass
-- Verify legacy `BlockTessellator::_getTexture` hook stability.
-- Measure legacy-vs-new tessellation activity.
-- Keep rendering unchanged.
-- Keep connected glass fully delegated to BedrockTools.
+## Done
+- Validate legacy BlockTessellator hook on 1.26.52.3.
+- Validate cached neighbor lookup.
+- Validate custom terrain-atlas UV replacement.
+- Validate Continuity horizontal 4-tile mapping with bookshelf.
+- Remove the expensive useNewTessellation diagnostic hook.
+- Exclude connected glass for BedrockTools compatibility.
+- Replace hardcoded bookshelf renderer logic with a compiled .properties rule engine.
 
-## First non-glass visual POC
-- Use a Continuity-compatible non-glass rule, preferably horizontal bookshelf.
-- Resolve the vanilla source texture plus 4 replacement atlas entries.
-- Validate left/right face orientation.
-- Validate neighbor lookup through the tessellator cache.
+## Current supported rule subset
+- method=horizontal / bookshelf
+- connect=block
+- matchBlocks
+- matchTiles
+- tiles with compact numeric ranges such as 0-3 or prefix_0-3
+- faces
+- innerSeams parsed
+- orient=none
 
-## Generic compatibility layer
-- Compile `matchBlocks` / `matchTiles` once on resource reload.
-- Add connect=block/state/tile.
-- Add faces / orientation / innerSeams.
-- Add horizontal, vertical, fixed, random, repeat.
-- Add generic 47-tile CTM for non-glass rules.
-- Add multipass.
+## Next processors
+- method=vertical
+- method=fixed
+- method=top
+- method=random
+- method=repeat
+- generic method=ctm (47 tiles, non-glass)
+- horizontal+vertical / vertical+horizontal
 
-## New renderer pipeline
-- RE the mutation point around `SurfaceExtractionStep::run`, `FaceMaterial`, and `MaterialFaceAttributes`.
-- Prefer texture-index/UV mutation before final MeshData emission.
+## Rule compatibility
+- connect=state
+- connect=tile
+- block state predicates
+- resourceCondition
+- heights / biomes
+- prioritize and deterministic ordering parity
+- orientation=state_axis / texture
+- multipass
 
-## Later renderer features
-- compact CTM
-- overlay
-- emissive
-- custom block layers
+## Later renderer work
+- compact CTM geometry splitting
+- overlay extra-quad path
+- emissive extra material/lighting path
+- new ClientBlockPipeline support only where required
 
 ## Explicit non-goal
-- Do not add connected-glass block/pane rendering while BedrockTools provides that module.
+- Do not implement connected glass or glass-pane rendering while BedrockTools provides that module.

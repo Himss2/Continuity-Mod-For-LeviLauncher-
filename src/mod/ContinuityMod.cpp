@@ -1,17 +1,19 @@
 #include "mod/ContinuityMod.h"
+
 #include "engine/Signatures.h"
-#include "util/Properties.h"
+
 #include <filesystem>
 #include <fmt/format.h>
 
 namespace continuity_bedrock {
 
 ContinuityMod& ContinuityMod::instance() {
-    static ContinuityMod i;
-    return i;
+    static ContinuityMod instance;
+    return instance;
 }
 
-ContinuityMod::ContinuityMod() : mSelf(*ll::mod::NativeMod::current()) {}
+ContinuityMod::ContinuityMod()
+    : mSelf(*ll::mod::NativeMod::current()) {}
 
 bool ContinuityMod::load() {
     auto& log = getSelf().getLogger();
@@ -26,15 +28,18 @@ bool ContinuityMod::load() {
     }
     mConfig = mConfigFile->value();
 
-    const auto rulePath =
-        getSelf().getResourceDir() / "continuity" / "rules" / "bookshelf.properties";
-    const auto props = util::loadProperties(rulePath);
+    const auto rulesDir = getSelf().getResourceDir() / "continuity" / "rules";
+    const bool loaded = mRules.load(
+        rulesDir,
+        [&](const std::string& message) { getSelf().getLogger().info("{}", message); });
 
     log.info(
-        "Loaded Continuity Bedrock 0.1.3 POC; rule={} method={} connect={}; glass excluded",
-        rulePath.string(),
-        props.contains("method") ? props.at("method") : "?",
-        props.contains("connect") ? props.at("connect") : "?");
+        "Loaded Continuity Bedrock rule engine; rules={}, glass delegated to BedrockTools",
+        mRules.ruleCount());
+
+    if (!loaded) {
+        log.warn("No supported Continuity rules were compiled");
+    }
 
     return true;
 }
@@ -62,13 +67,15 @@ bool ContinuityMod::enable() {
     const bool ok = mHook.install(
         mAddresses,
         mConfig,
-        [&](const std::string& s) { getSelf().getLogger().info("{}", s); });
+        &mRules,
+        [&](const std::string& message) { getSelf().getLogger().info("{}", message); });
 
     if (!ok) {
-        log.error("Failed to install legacy _getTexture hook");
+        log.error("Failed to install generic Continuity legacy hook");
     } else {
         log.info(
-            "Bookshelf horizontal POC installed={}, useNewTessellation diagnostic disabled",
+            "Generic rule hook active; rules={}, visualPOC={}",
+            mRules.ruleCount(),
             mConfig.enableBookshelfPoc);
     }
 
@@ -76,12 +83,11 @@ bool ContinuityMod::enable() {
 }
 
 bool ContinuityMod::disable() {
-    const auto s = mHook.stats();
+    const auto stats = mHook.stats();
     getSelf().getLogger().info(
-        "Renderer stats: getTexture={}, bookshelfFaces={}, atlasProbeAttempts={}",
-        s.getTextureCalls,
-        s.bookshelfFaces,
-        s.atlasProbeAttempts);
+        "Renderer stats: getTexture={}, replacedFaces={}",
+        stats.getTextureCalls,
+        stats.replacedFaces);
 
     mHook.uninstall();
     return true;

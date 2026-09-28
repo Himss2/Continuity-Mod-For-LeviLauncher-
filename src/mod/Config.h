@@ -29,8 +29,8 @@ template <> struct pl::config::Schema<continuity_bedrock::ModConfig> {
             return {.title = "Enabled"};
         if (name == "enableBookshelfPoc")
             return {
-                .title = "Bookshelf horizontal POC",
-                .description = "Apply Continuity's 4-tile horizontal method to vanilla bookshelf side faces."
+                .title = "Compiled rule engine",
+                .description = "Enable the current generic compiled-rule runtime (currently method=horizontal/connect=block)."
             };
         if (name == "diagnostics")
             return {

@@ -1,50 +1,87 @@
-# Continuity Bedrock — LeviLauncher RE POC
+# Continuity Bedrock — LeviLauncher
 
-Native Bedrock reimplementation experiment inspired by Java Continuity. This repository targets **LeviLauncher Android 1.5.24**, `preloader-android 0.2.2`, Android NDK `28.2.13676358`, and Minecraft Bedrock **1.26.52.3 arm64**.
+Native Bedrock reimplementation experiment inspired by Java Continuity. Current target: **Minecraft Bedrock 1.26.52.3 arm64**, LeviLauncher Android 1.5.24, preloader-android 0.2.2, Android NDK 28.2.13676358.
 
-This is a **diagnostic-first POC**, not a finished release.
+## Current milestone: generic horizontal rule engine
 
-## Connected glass
-
-**Connected glass is deliberately excluded from this mod.**
-
-BedrockTools now contains its own Connected Glass module for glass blocks and panes. Continuity Bedrock therefore does not bundle glass CTM textures, a glass rule, glass-pane culling, or any glass-specific UV replacement logic. This keeps both mods able to coexist without two modules trying to own the same rendering behavior.
-
-The generic Continuity CTM lookup code remains as renderer groundwork for future **non-glass** resource-pack rules.
-
-## Current state
-
-Implemented RE groundwork:
-
-- verified signatures from the supplied `libminecraftpe.so 1.26.52.3`
-- legacy `BlockTessellator::_getTexture` diagnostic hook
-- diagnostic hook for `BlockTessellatorPipeline::useNewTessellation`
-- known `BlockTessellatorCache::getBlock` and atlas resolver addresses retained for later generic rule work
-- Continuity 256-mask -> 47-tile algorithm retained as generic engine code
-- fail-safe behavior when signatures do not match
-- no active texture replacement in the current build
-
-The old connected-glass POC and bundled glass resource pack were removed.
-
-## Diagnostic test
-
-Build/import with defaults, enter a world, move around enough to rebuild chunks, then close the game and inspect logcat.
-
-Useful output:
+The renderer hook no longer contains bookshelf-specific matching. Runtime behavior now follows this pipeline:
 
 ```text
-RE 1.26.52.3: _getTexture=..., cacheGetBlock=..., atlasUv=..., useNew=...
-Renderer diagnostics installed; no texture replacement is active.
-Renderer stats: getTexture=..., pipelineChecks=..., newTrue=..., newFalse=...
+resources/continuity/rules/*.properties
+        ↓
+properties scanner/compiler
+        ↓
+compiled RuleDefinition
+        ↓
+block-type candidate selection
+        ↓
+source atlas match
+        ↓
+method processor
+        ↓
+neighbor lookup
+        ↓
+replacement TextureUVCoordinateSet
 ```
 
-This build is intended only to verify that the renderer hooks remain stable before the first non-glass Continuity method is implemented.
+The first supported processor is:
 
-## Next renderer target
+- `method=horizontal`
+- alias `method=bookshelf`
+- `connect=block`
+- `faces=all|sides|down|up|north|south|west|east`
+- `orient=none`
+- exactly 4 replacement tiles
+- `matchBlocks` and/or `matchTiles`
 
-The next POC should use a non-glass rule such as Continuity's horizontal bookshelf method. That lets us validate rule parsing, atlas lookup, neighbor orientation and UV replacement without overlapping BedrockTools.
+The bundled `bookshelf.properties` is now only a test rule for that generic engine.
 
-## Build with Termux / Linux
+## Connected glass policy
+
+**Connected glass is intentionally excluded.**
+
+BedrockTools already owns connected rendering for glass blocks and panes. The rule compiler rejects known glass/pane targets so this mod does not compete with BedrockTools over the same renderer path.
+
+The generic 47-tile CTM lookup remains in the source because it will be used for future non-glass `method=ctm` support.
+
+## Performance
+
+The expensive `useNewTessellation` diagnostic hook was removed after runtime testing showed the legacy BlockTessellator path is overwhelmingly dominant on the tested 1.26.52.3 build.
+
+The active hot path now:
+
+1. calls vanilla `BlockTessellator::_getTexture`;
+2. uses a thread-local cache for the current `BlockType` candidate rules;
+3. returns immediately when no rule can match;
+4. only queries neighbors after a rule, face, block and source tile all match.
+
+Atlas entries are resolved lazily once per rule and cached.
+
+## Test rule
+
+`resources/continuity/rules/bookshelf.properties`:
+
+```properties
+matchBlocks=minecraft:bookshelf
+matchTiles=bookshelf
+method=horizontal
+tiles=continuity_bookshelf_0-3
+faces=sides
+connect=block
+innerSeams=false
+orient=none
+```
+
+Continuity horizontal mapping:
+
+```text
+no neighbours  -> tile 3
+left only      -> tile 2
+right only     -> tile 0
+left + right   -> tile 1
+```
+
+## Build
 
 ```bash
 cmake -S . -B build-config -G Ninja
@@ -60,26 +97,32 @@ cmake -S . -B build-arm64 -G Ninja \
 cmake --build build-arm64 --target levi_package
 ```
 
-PowerShell:
+## RE anchors for 1.26.52.3
 
-```powershell
-./scripts/package.ps1
-```
+- `BlockTessellator::_getTexture`: RVA `0xA67583C`
+- `BlockTessellatorCache::getBlock`: RVA `0xA65CAD4`
+- `BlockGraphics::getTextureUVCoordinateSet`: RVA `0xA66EB14`
 
-## Verify the exact binary
+Use:
 
 ```bash
 python scripts/verify_signatures.py /path/to/libminecraftpe.so
 ```
 
-## Important limitations
+before testing another binary.
 
-- only `1.26.52.3` arm64 is targeted right now
-- generic Java `.properties` compatibility is not yet wired into runtime matching
-- no texture replacement is active in the current diagnostic build
-- connected glass is delegated to BedrockTools
-- `ctm_compact`, overlays, emissive and custom layers are not implemented
-- new `ClientBlockPipeline` mutation will be implemented only after its runtime path is validated
+## Next
+
+The next processors should be implemented on top of the same compiled-rule path rather than adding block-specific hooks:
+
+- vertical
+- fixed
+- top
+- random
+- repeat
+- generic 47-tile CTM for non-glass targets
+- multipass
+- later: compact CTM, overlay, emissive
 
 ## License
 
