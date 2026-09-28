@@ -30,6 +30,7 @@ bool LegacyCtmHook::install(
     mGetTextureCalls.store(0, std::memory_order_relaxed);
     mReplacedFaces.store(0, std::memory_order_relaxed);
     mLoggedFirstHit.store(false, std::memory_order_relaxed);
+    mRuleEngineEnabled.store(config.enableRuleEngine, std::memory_order_relaxed);
 
     sInstance = this;
 
@@ -101,7 +102,7 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
         || !self
         || !pos
         || !block
-        || !mConfig.enableRuleEngine
+        || !mRuleEngineEnabled.load(std::memory_order_relaxed)
         || !mRules
         || !mCacheGetBlock
         || !mGetTextureUv) {

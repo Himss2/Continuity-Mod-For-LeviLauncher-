@@ -18,6 +18,10 @@ Addresses resolveAddresses() {
         "E8 0F 19 FC FD 7B 01 A9 FC 6F 02 A9 FA 67 03 A9 F8 5F 04 A9 F6 57 05 A9 F4 4F 06 A9 FD 43 00 91 FF 43 2C D1", kModule);
     a.pipelineRun = pl::memory::resolveSignature(
         "FF 43 02 D1 FD 7B 05 A9 F8 5F 06 A9 F6 57 07 A9 F4 4F 08 A9 FD 43 01 91 57 D0 3B D5", kModule);
+    a.clientInstanceUpdate = pl::memory::resolveSignature(
+        "? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 FD 03 00 91 ? ? ? D1 59 D0 3B D5 F3 03 00 AA F4 03 01 2A ? ? ? F9 ? ? ? F8 ? ? ? F9 ? ? ? F9", kModule);
+    a.renderChunkCoordinatorSetAllDirty = pl::memory::resolveSignature(
+        "? ? ? D1 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? A9 ? ? ? 91 48 D0 3B D5 F4 03 02 2A F3 03 00 AA", kModule);
     return a;
 }
 

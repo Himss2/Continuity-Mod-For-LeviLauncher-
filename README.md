@@ -8,6 +8,20 @@ Current target:
 - preloader-android 0.2.2
 - Android NDK 28.2.13676358
 
+## Levi Mod Menu runtime toggle
+
+Version **0.5.0-re-poc** registers a native Mod Menu module named **Continuity Connected Textures** through `pl::modmenu::ModuleBuilder`.
+
+The module toggle:
+
+- enables/disables the compiled Continuity rule engine without unloading the native mod;
+- persists `enableRuleEngine` back to the typed config;
+- keeps the lightweight renderer hook installed and fast-returns vanilla UVs while disabled;
+- requests a visible-chunk rebuild through `RenderChunkCoordinator::setAllDirty`, so ON/OFF comparison updates in the current world instead of waiting for a natural chunk rebuild;
+- does not control Connected Glass, which remains owned by BedrockTools.
+
+If the optional chunk-rebuild signatures fail to resolve on a future Minecraft version, the toggle still changes rule processing, but already-built chunks may require movement or another natural rebuild.
+
 ## Current milestone: multi-method compiled rule engine
 
 The legacy renderer path was validated on-device and the renderer hook no longer contains block-specific CTM logic.

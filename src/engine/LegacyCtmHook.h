@@ -27,6 +27,12 @@ public:
         LogFn log
     );
     void uninstall();
+    void setRuleEngineEnabled(bool enabled) {
+        mRuleEngineEnabled.store(enabled, std::memory_order_release);
+    }
+    bool ruleEngineEnabled() const {
+        return mRuleEngineEnabled.load(std::memory_order_acquire);
+    }
     HookStats stats() const;
 
 private:
@@ -53,6 +59,7 @@ private:
     std::atomic<uint64_t> mGetTextureCalls{};
     std::atomic<uint64_t> mReplacedFaces{};
     std::atomic_bool mLoggedFirstHit{};
+    std::atomic_bool mRuleEngineEnabled{true};
 };
 
 }

@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Completed
+- Levi Mod Menu runtime toggle with persisted state and visible-chunk rebuild.
 - Legacy BlockTessellator renderer path validated on-device.
 - Cached neighbour lookup validated.
 - Bedrock terrain-atlas UV replacement validated.
