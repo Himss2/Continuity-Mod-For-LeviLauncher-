@@ -1,6 +1,7 @@
 {
-  "version": 2,
+  "version": 3,
   "enabled": true,
+  "enableBookshelfPoc": true,
   "diagnostics": true,
-  "maxDiagnosticLogs": 32
+  "maxDiagnosticLogs": 8
 }

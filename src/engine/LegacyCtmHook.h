@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/AtlasCache.h"
 #include "engine/Signatures.h"
 #include "engine/Types.h"
 #include "mod/Config.h"
@@ -7,11 +8,11 @@
 #include <string>
 
 namespace continuity_bedrock::engine {
+
 struct HookStats {
     uint64_t getTextureCalls{};
-    uint64_t pipelineChecks{};
-    uint64_t pipelineTrue{};
-    uint64_t pipelineFalse{};
+    uint64_t bookshelfFaces{};
+    uint64_t atlasProbeAttempts{};
 };
 
 class LegacyCtmHook {
@@ -23,30 +24,39 @@ public:
     HookStats stats() const;
 
 private:
-    using GetTextureFn = const TextureUvSet* (*)(void*, const BlockPos*, const void*, uint8_t, int, const void*);
-    using UseNewTessellationFn = bool (*)(const void*, bool);
+    using GetTextureFn =
+        const TextureUvSet* (*)(void*, const BlockPos*, const void*, uint8_t, int, const void*);
+    using CacheGetBlockFn = const void* (*)(void*, const BlockPos*);
 
     static const TextureUvSet* getTextureDetour(
         void*, const BlockPos*, const void*, uint8_t, int, const void*);
-    static bool useNewDetour(const void*, bool);
 
     const TextureUvSet* onGetTexture(
         void*, const BlockPos*, const void*, uint8_t, int, const void*);
-    bool onUseNew(const void*, bool);
     void logDiagnostic(std::string message);
+
+    static const void* blockType(const void* block);
+    static bool hasFullName(const void* block, std::string_view expected);
 
     static LegacyCtmHook* sInstance;
     ModConfig mConfig{};
     LogFn mLog;
     Addresses mAddresses{};
     GetTextureFn mOriginalGetTexture{};
-    UseNewTessellationFn mOriginalUseNew{};
+    CacheGetBlockFn mCacheGetBlock{};
+    AtlasCache::GetTextureUvFn mGetTextureUv{};
     bool mGetTextureInstalled{};
-    bool mUseNewInstalled{};
+
+    AtlasCache mAtlas;
+    std::atomic<uintptr_t> mBookshelfType{};
     std::atomic<uint64_t> mGetTextureCalls{};
-    std::atomic<uint64_t> mPipelineChecks{};
-    std::atomic<uint64_t> mPipelineTrue{};
-    std::atomic<uint64_t> mPipelineFalse{};
+    std::atomic<uint64_t> mBookshelfFaces{};
+    std::atomic<uint64_t> mAtlasProbeAttempts{};
+    std::atomic<uint64_t> mPreAtlasCalls{};
     std::atomic<uint32_t> mDiagnosticLogCount{};
+    std::atomic_bool mLoggedRuntimeHit{};
+    std::atomic_bool mLoggedAtlasReady{};
+    std::atomic_bool mLoggedBookshelf{};
 };
+
 }

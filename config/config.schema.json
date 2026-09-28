@@ -1,13 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Continuity Bedrock",
-  "description": "Renderer RE/Continuity compatibility POC. Connected glass is intentionally excluded.",
+  "description": "Connected glass is intentionally excluded; current visual POC is horizontal bookshelf.",
   "type": "object",
   "properties": {
     "version": {"type":"integer", "readOnly":true},
     "enabled": {"type":"boolean"},
+    "enableBookshelfPoc": {
+      "type":"boolean",
+      "description":"Apply Continuity's 4-tile horizontal method to vanilla bookshelf side faces."
+    },
     "diagnostics": {"type":"boolean"},
-    "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":256}
+    "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":32}
   },
   "additionalProperties": false
 }

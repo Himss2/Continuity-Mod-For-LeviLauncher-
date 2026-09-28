@@ -4,9 +4,20 @@
 #include <cstdint>
 
 namespace continuity_bedrock::engine::ctm {
-struct Vec3i { int x, y, z; };
+
+struct Vec3i {
+    int x;
+    int y;
+    int z;
+};
+
 std::array<Vec3i, 4> directionsForFace(uint8_t face);
 uint8_t tileForMask(uint8_t mask);
+
+// Java Continuity HorizontalSpriteProvider:
+// bits: left=1, right=2
+// map: {3, 2, 0, 1}
+uint8_t horizontalTile(bool leftConnected, bool rightConnected);
 
 template <class Connected>
 uint8_t buildMask(const BlockPos& pos, uint8_t face, Connected&& connected) {
@@ -27,4 +38,5 @@ uint8_t buildMask(const BlockPos& pos, uint8_t face, Connected&& connected) {
     }
     return mask;
 }
+
 }

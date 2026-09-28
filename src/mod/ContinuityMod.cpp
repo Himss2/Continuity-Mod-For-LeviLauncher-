@@ -1,9 +1,11 @@
 #include "mod/ContinuityMod.h"
 #include "engine/Signatures.h"
+#include "util/Properties.h"
 #include <filesystem>
 #include <fmt/format.h>
 
 namespace continuity_bedrock {
+
 ContinuityMod& ContinuityMod::instance() {
     static ContinuityMod i;
     return i;
@@ -24,15 +26,22 @@ bool ContinuityMod::load() {
     }
     mConfig = mConfigFile->value();
 
+    const auto rulePath =
+        getSelf().getResourceDir() / "continuity" / "rules" / "bookshelf.properties";
+    const auto props = util::loadProperties(rulePath);
+
     log.info(
-        "Loaded Continuity Bedrock diagnostic core. Connected glass is intentionally excluded "
-        "and delegated to BedrockTools.");
+        "Loaded Continuity Bedrock 0.1.3 POC; rule={} method={} connect={}; glass excluded",
+        rulePath.string(),
+        props.contains("method") ? props.at("method") : "?",
+        props.contains("connect") ? props.at("connect") : "?");
 
     return true;
 }
 
 bool ContinuityMod::enable() {
     auto& log = getSelf().getLogger();
+
     if (!mConfig.enabled) {
         log.info("Disabled by config");
         return true;
@@ -40,14 +49,13 @@ bool ContinuityMod::enable() {
 
     mAddresses = engine::resolveAddresses();
     log.info(
-        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}, useNew={:#x}",
+        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}",
         mAddresses.blockTessellatorGetTexture,
         mAddresses.blockTessellatorCacheGetBlock,
-        mAddresses.blockGraphicsGetTextureUv,
-        mAddresses.useNewTessellation);
+        mAddresses.blockGraphicsGetTextureUv);
 
-    if (!mAddresses.blockTessellatorGetTexture) {
-        log.error("Legacy renderer diagnostic signature did not resolve. Hooks are NOT installed.");
+    if (!engine::coreAddressesReady(mAddresses)) {
+        log.error("Core renderer signatures did not resolve. Hooks are NOT installed.");
         return true;
     }
 
@@ -57,9 +65,11 @@ bool ContinuityMod::enable() {
         [&](const std::string& s) { getSelf().getLogger().info("{}", s); });
 
     if (!ok) {
-        log.error("Failed to install legacy _getTexture diagnostic hook");
+        log.error("Failed to install legacy _getTexture hook");
     } else {
-        log.info("Renderer diagnostics installed; no texture replacement is active.");
+        log.info(
+            "Bookshelf horizontal POC installed={}, useNewTessellation diagnostic disabled",
+            mConfig.enableBookshelfPoc);
     }
 
     return true;
@@ -68,11 +78,10 @@ bool ContinuityMod::enable() {
 bool ContinuityMod::disable() {
     const auto s = mHook.stats();
     getSelf().getLogger().info(
-        "Renderer stats: getTexture={}, pipelineChecks={}, newTrue={}, newFalse={}",
+        "Renderer stats: getTexture={}, bookshelfFaces={}, atlasProbeAttempts={}",
         s.getTextureCalls,
-        s.pipelineChecks,
-        s.pipelineTrue,
-        s.pipelineFalse);
+        s.bookshelfFaces,
+        s.atlasProbeAttempts);
 
     mHook.uninstall();
     return true;
@@ -82,4 +91,5 @@ bool ContinuityMod::unload() {
     mConfigFile.reset();
     return true;
 }
+
 }

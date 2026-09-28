@@ -1,8 +1,8 @@
 #include "engine/CtmResolver.h"
 
 namespace continuity_bedrock::engine::ctm {
-// Ported behavior from Continuity's CtmSpriteProvider. Bit layout:
-// 128 64 32 / 1 * 16 / 2 4 8
+
+// Generic Continuity 47-tile map. Not tied to glass.
 static constexpr std::array<uint8_t, 256> kSpriteIndexMap = {
 0,3,0,3,12,5,12,15,0,3,0,3,12,5,12,15,1,2,1,2,4,7,4,29,1,2,1,2,13,31,13,14,
 0,3,0,3,12,5,12,15,0,3,0,3,12,5,12,15,1,2,1,2,4,7,4,29,1,2,1,2,13,31,13,14,
@@ -14,9 +14,8 @@ static constexpr std::array<uint8_t, 256> kSpriteIndexMap = {
 36,39,36,39,24,41,24,27,36,39,36,39,24,41,24,27,37,38,37,38,30,11,30,32,37,38,37,38,25,33,25,26};
 
 std::array<Vec3i, 4> directionsForFace(uint8_t face) {
-    // NONE orientation, equivalent intent to Continuity DirectionMaps map[0].
-    // Order: left, down, right, up. This table is isolated so face-orientation
-    // parity can be corrected without touching mask/tile logic.
+    // Continuity DirectionMaps, orientation=NONE.
+    // Order: texture-left, texture-down, texture-right, texture-up.
     switch (face) {
     case 0: return {{{-1,0,0},{0,0,-1},{1,0,0},{0,0,1}}}; // down
     case 1: return {{{-1,0,0},{0,0,1},{1,0,0},{0,0,-1}}}; // up
@@ -27,5 +26,16 @@ std::array<Vec3i, 4> directionsForFace(uint8_t face) {
     default: return {{{-1,0,0},{0,-1,0},{1,0,0},{0,1,0}}};
     }
 }
-uint8_t tileForMask(uint8_t mask) { return kSpriteIndexMap[mask]; }
+
+uint8_t tileForMask(uint8_t mask) {
+    return kSpriteIndexMap[mask];
+}
+
+uint8_t horizontalTile(bool leftConnected, bool rightConnected) {
+    static constexpr std::array<uint8_t, 4> kHorizontalMap = {3, 2, 0, 1};
+    const uint8_t mask =
+        static_cast<uint8_t>((leftConnected ? 1u : 0u) | (rightConnected ? 2u : 0u));
+    return kHorizontalMap[mask];
+}
+
 }
