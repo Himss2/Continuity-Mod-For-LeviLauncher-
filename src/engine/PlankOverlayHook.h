@@ -27,6 +27,7 @@ public:
     void setEnabled(bool enabled) {
         mEnabled.store(enabled, std::memory_order_release);
     }
+
     bool enabled() const {
         return mEnabled.load(std::memory_order_acquire);
     }
@@ -73,10 +74,12 @@ private:
     bool emitNeighborOverlay(
         uint8_t face,
         uint8_t localEdge,
+        bool dualSided,
         void* blockTessellator,
         void* tessellator,
         const void* targetBlock,
-        const BlockPos& targetPos,
+        const void* sourceBlock,
+        const BlockPos& sourcePos,
         const Vec3Raw& renderPos,
         const AabbRaw& originalShape
     );
@@ -84,6 +87,7 @@ private:
     void emitJaggedEdge(
         uint8_t face,
         uint8_t localEdge,
+        bool dualSided,
         FaceFn original,
         void* blockTessellator,
         void* tessellator,
@@ -93,7 +97,23 @@ private:
         const AabbRaw& originalShape
     );
 
+    bool sourceSurroundedOnFourSides(
+        void* blockCache,
+        const BlockPos& sourcePos,
+        uint8_t face
+    ) const;
+
+    const void* horizontalNeighbor(
+        void* blockCache,
+        void* blockTessellator,
+        const void* centerBlock,
+        const BlockPos& centerPos,
+        uint8_t face,
+        uint8_t localEdge
+    ) const;
+
     static std::string_view blockFullName(const void* block);
+    static uint8_t blockClassFlags(const void* block);
     static bool isPlank(const void* block);
     static bool isGlassLike(const void* block);
     static bool isAirLike(const void* block);
@@ -103,7 +123,6 @@ private:
         uint8_t face,
         uint8_t localEdge
     );
-    static BlockPos faceNormal(uint8_t face);
     static AabbRaw makeStrip(
         const AabbRaw& original,
         uint8_t face,
