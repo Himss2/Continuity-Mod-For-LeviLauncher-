@@ -1,6 +1,5 @@
 #pragma once
 
-#include "engine/ChunkRebuildBridge.h"
 #include "engine/LegacyCtmHook.h"
 #include "engine/RuleEngine.h"
 #include "mod/Config.h"
@@ -41,7 +40,6 @@ private:
     engine::Addresses mAddresses{};
     engine::RuleEngine mRules;
     engine::LegacyCtmHook mHook;
-    engine::ChunkRebuildBridge mChunkRebuild;
 
     bool mMenuRegistered{};
 };

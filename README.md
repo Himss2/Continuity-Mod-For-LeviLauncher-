@@ -23,10 +23,9 @@ The module toggle:
 - enables/disables the compiled Continuity rule engine without unloading the native mod;
 - persists `enableRuleEngine` back to the typed config;
 - keeps the lightweight renderer hook installed and fast-returns vanilla UVs while disabled;
-- requests a visible-chunk rebuild through `RenderChunkCoordinator::setAllDirty`, so ON/OFF comparison updates in the current world instead of waiting for a natural chunk rebuild;
 - does not control Connected Glass, which remains owned by BedrockTools.
 
-If the optional chunk-rebuild signatures fail to resolve on a future Minecraft version, the toggle still changes rule processing, but already-built chunks may require movement or another natural rebuild.
+Version **0.5.2-re-poc** intentionally disables the experimental automatic `RenderChunkCoordinator::setAllDirty` refresh path after an on-device crash showed that the coordinator object traversal is not safe enough for this Minecraft build. Existing meshes therefore refresh on the next natural chunk rebuild while the Mod Menu toggle itself remains runtime-safe.
 
 ## Current milestone: multi-method compiled rule engine
 

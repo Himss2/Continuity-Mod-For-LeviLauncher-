@@ -68,13 +68,10 @@ bool ContinuityMod::enable() {
     mAddresses = engine::resolveAddresses();
 
     log.info(
-        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}, "
-        "clientUpdate={:#x}, setAllDirty={:#x}",
+        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}",
         mAddresses.blockTessellatorGetTexture,
         mAddresses.blockTessellatorCacheGetBlock,
-        mAddresses.blockGraphicsGetTextureUv,
-        mAddresses.clientInstanceUpdate,
-        mAddresses.renderChunkCoordinatorSetAllDirty);
+        mAddresses.blockGraphicsGetTextureUv);
 
     if (!engine::coreAddressesReady(mAddresses)) {
         log.error("Core renderer signatures did not resolve. Hooks are NOT installed.");
@@ -92,17 +89,6 @@ bool ContinuityMod::enable() {
     if (!hookOk) {
         log.error("Failed to install generic Continuity legacy hook");
         return true;
-    }
-
-    const bool rebuildOk = mChunkRebuild.install(
-        mAddresses,
-        [&](const std::string& message) {
-            getSelf().getLogger().info("{}", message);
-        });
-
-    if (!rebuildOk) {
-        log.warn(
-            "Continuity toggle will still work, but existing chunks may need a natural rebuild");
     }
 
     if (!registerModMenu()) {
@@ -127,7 +113,6 @@ bool ContinuityMod::disable() {
         stats.getTextureCalls,
         stats.replacedFaces);
 
-    mChunkRebuild.uninstall();
     mHook.uninstall();
     return true;
 }
@@ -188,14 +173,11 @@ void ContinuityMod::handleModMenuToggle(
     mHook.setRuleEngineEnabled(enabled);
     persistRuleEngineEnabled(enabled);
 
-    // Existing block meshes contain already-resolved UVs. Request a renderer
-    // rebuild so ON/OFF comparison is visible immediately in the current world.
-    mChunkRebuild.request();
-
     getSelf().getLogger().info(
-        "Mod Menu: Continuity connected textures {}; chunk rebuild requested={}",
-        enabled ? "ON" : "OFF",
-        mChunkRebuild.ready());
+        "Mod Menu: Continuity connected textures {}. "
+        "Automatic chunk rebuild is disabled for stability; existing meshes "
+        "refresh on the next natural chunk rebuild.",
+        enabled ? "ON" : "OFF");
 }
 
 bool ContinuityMod::persistRuleEngineEnabled(bool enabled) {
