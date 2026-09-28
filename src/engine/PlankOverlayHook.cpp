@@ -3,10 +3,10 @@
 #include "engine/CtmResolver.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <pl/memory/Hook.hpp>
 #include <utility>
 
@@ -24,10 +24,13 @@ constexpr std::ptrdiff_t kBlockTypeNameInfoOffset = 0x88;
 constexpr std::ptrdiff_t kNameInfoFullNameOffset = 0x40;
 constexpr std::ptrdiff_t kHashedStringStringOffset = 0x8;
 
-constexpr float kFaceEpsilon = 0.0010f;
+// 1/256 block is still visually flush, but is far enough from the vanilla
+// face to avoid mobile depth-buffer flicker while the camera moves.
+constexpr float kFaceEpsilon = 1.0f / 256.0f;
 
-// Four deliberately irregular 16x-style depths, matching the visual language
-// of Simple Overlays without baking any plank pixels into this mod.
+// Four 4-pixel-high teeth. Single-sided overlays may reach farther into the
+// target, while dual-sided overlays are clamped below half width so the two
+// vanilla textures can never overlap and z-fight with each other.
 constexpr std::array<float, 4> kDepth = {
     8.0f / 16.0f,
     5.0f / 16.0f,
@@ -43,8 +46,43 @@ constexpr std::array<float, 5> kBand = {
     1.0f,
 };
 
+constexpr float kDualSideMaxDepth = 7.0f / 16.0f;
+
+constexpr uint8_t kClassPlank = 1u << 0;
+constexpr uint8_t kClassGlass = 1u << 1;
+constexpr uint8_t kClassAir   = 1u << 2;
+
+struct ClassCacheEntry {
+    const void* block{};
+    uint8_t flags{};
+};
+
+thread_local std::array<ClassCacheEntry, 64> gClassCache{};
+
+struct HorizontalNeighborCache {
+    void* blockTessellator{};
+    const void* centerBlock{};
+    BlockPos centerPos{};
+    bool valid{};
+    // -X, +X, -Z, +Z
+    std::array<const void*, 4> neighbors{};
+};
+
+thread_local HorizontalNeighborCache gHorizontalCache{};
+
+bool samePos(const BlockPos& a, const BlockPos& b) {
+    return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
 float lerp(float a, float b, float t) {
     return a + (b - a) * t;
+}
+
+size_t horizontalIndex(int dx, int dz) {
+    if (dx < 0) return 0;
+    if (dx > 0) return 1;
+    if (dz < 0) return 2;
+    return 3;
 }
 
 }
@@ -66,7 +104,9 @@ bool PlankOverlayHook::install(
     mLoggedFirstOverlay.store(false, std::memory_order_relaxed);
 
     if (!mTextureHook || !mGetBlock) {
-        if (mLog) mLog("Plank overlay POC unavailable: renderer dependencies missing");
+        if (mLog) {
+            mLog("Plank overlay POC unavailable: renderer dependencies missing");
+        }
         return false;
     }
 
@@ -107,11 +147,12 @@ bool PlankOverlayHook::install(
             + std::string(mFaces[0].installed ? "ok" : "fail")
             + ", south=" + (mFaces[1].installed ? "ok" : "fail")
             + ", west=" + (mFaces[2].installed ? "ok" : "fail")
-            + ", east=" + (mFaces[3].installed ? "ok" : "fail"));
+            + ", east=" + (mFaces[3].installed ? "ok" : "fail")
+            + "; horizontal-only, no top/bottom transitions");
     }
 
-    if (!any) {
-        if (sInstance == this) sInstance = nullptr;
+    if (!any && sInstance == this) {
+        sInstance = nullptr;
     }
 
     return any;
@@ -140,7 +181,9 @@ void PlankOverlayHook::uninstall() {
     mTextureHook = nullptr;
     mGetBlock = nullptr;
 
-    if (sInstance == this) sInstance = nullptr;
+    if (sInstance == this) {
+        sInstance = nullptr;
+    }
 }
 
 void PlankOverlayHook::northDetour(
@@ -195,7 +238,7 @@ void PlankOverlayHook::onFace(
     FaceFn original = index < mFaces.size() ? mFaces[index].original : nullptr;
     if (!original) return;
 
-    // Always preserve vanilla/base face first.
+    // Preserve the vanilla/base face first.
     original(blockTessellator, tessellator, block, position, inputTexture);
 
     if (!mEnabled.load(std::memory_order_relaxed)
@@ -216,59 +259,101 @@ void PlankOverlayHook::onFace(
     const AabbRaw originalShape = *shape;
     if (!isFullCube(originalShape)) return;
 
-    const BlockPos pos{
+    const BlockPos targetPos{
         static_cast<int32_t>(std::floor(position->x)),
         static_cast<int32_t>(std::floor(position->y)),
         static_cast<int32_t>(std::floor(position->z)),
     };
 
-    // left, down, right, up. Each edge can source a different vanilla plank.
-    for (uint8_t edge = 0; edge < 4; ++edge) {
+    auto* blockCache = reinterpret_cast<void*>(
+        reinterpret_cast<uintptr_t>(blockTessellator)
+        + kBlockTessellatorCacheOffset);
+
+    // Plank Simple Overlays are horizontal. Only texture-left and
+    // texture-right can source a transition; local down/up are intentionally
+    // ignored. This also halves the hot-path neighbor work.
+    const void* leftSource = horizontalNeighbor(
+        blockCache,
+        blockTessellator,
+        block,
+        targetPos,
+        face,
+        0);
+
+    const void* rightSource = horizontalNeighbor(
+        blockCache,
+        blockTessellator,
+        block,
+        targetPos,
+        face,
+        2);
+
+    const bool leftActive =
+        leftSource
+        && isPlank(leftSource)
+        && !sourceSurroundedOnFourSides(
+            blockCache,
+            neighborPos(targetPos, face, 0),
+            face);
+
+    const bool rightActive =
+        rightSource
+        && isPlank(rightSource)
+        && !sourceSurroundedOnFourSides(
+            blockCache,
+            neighborPos(targetPos, face, 2),
+            face);
+
+    const bool dualSided = leftActive && rightActive;
+
+    if (leftActive) {
         emitNeighborOverlay(
             face,
-            edge,
+            0,
+            dualSided,
             blockTessellator,
             tessellator,
             block,
-            pos,
+            leftSource,
+            neighborPos(targetPos, face, 0),
             *position,
             originalShape);
     }
 
-    // Be defensive even if an early return is introduced later.
+    if (rightActive) {
+        emitNeighborOverlay(
+            face,
+            2,
+            dualSided,
+            blockTessellator,
+            tessellator,
+            block,
+            rightSource,
+            neighborPos(targetPos, face, 2),
+            *position,
+            originalShape);
+    }
+
     *shape = originalShape;
 }
 
 bool PlankOverlayHook::emitNeighborOverlay(
     uint8_t face,
     uint8_t localEdge,
+    bool dualSided,
     void* blockTessellator,
     void* tessellator,
     const void* targetBlock,
-    const BlockPos& targetPos,
+    const void* sourceBlock,
+    const BlockPos& sourcePos,
     const Vec3Raw& renderPos,
     const AabbRaw& originalShape
 ) {
-    auto* cache = reinterpret_cast<void*>(
-        reinterpret_cast<uintptr_t>(blockTessellator)
-        + kBlockTessellatorCacheOffset);
-
-    const BlockPos sourcePos = neighborPos(targetPos, face, localEdge);
-    const void* sourceBlock = mGetBlock(cache, &sourcePos);
     if (!sourceBlock || !isPlank(sourceBlock)) return false;
 
-    // Match Continuity's overlay visibility idea: do not bleed from a plank
-    // whose same face is buried behind another solid-looking block. For this
-    // first POC, only explicit air-like blocks count as exposed.
-    const BlockPos n = faceNormal(face);
-    const BlockPos sourceFront{
-        sourcePos.x + n.x,
-        sourcePos.y + n.y,
-        sourcePos.z + n.z,
-    };
-    const void* front = mGetBlock(cache, &sourceFront);
-    if (front && !isAirLike(front)) return false;
-
+    // Do NOT require the block in front of the source plank to be air.
+    // The target face hook only runs when Bedrock actually tessellates that
+    // visible target face, so occlusion is already handled by the engine.
     const TextureUvSet* sourceTexture = mTextureHook->queryOriginalTexture(
         blockTessellator,
         &sourcePos,
@@ -286,6 +371,7 @@ bool PlankOverlayHook::emitNeighborOverlay(
     emitJaggedEdge(
         face,
         localEdge,
+        dualSided,
         original,
         blockTessellator,
         tessellator,
@@ -302,13 +388,7 @@ bool PlankOverlayHook::emitNeighborOverlay(
             + ", source=" + std::string(blockFullName(sourceBlock))
             + ", face=" + std::to_string(face)
             + ", edge=" + std::to_string(localEdge)
-            + ", shape=("
-            + std::to_string(originalShape.minX) + ","
-            + std::to_string(originalShape.minY) + ","
-            + std::to_string(originalShape.minZ) + ")->("
-            + std::to_string(originalShape.maxX) + ","
-            + std::to_string(originalShape.maxY) + ","
-            + std::to_string(originalShape.maxZ) + ")");
+            + ", dual=" + (dualSided ? "true" : "false"));
     }
 
     return true;
@@ -317,6 +397,7 @@ bool PlankOverlayHook::emitNeighborOverlay(
 void PlankOverlayHook::emitJaggedEdge(
     uint8_t face,
     uint8_t localEdge,
+    bool dualSided,
     FaceFn original,
     void* blockTessellator,
     void* tessellator,
@@ -330,45 +411,24 @@ void PlankOverlayHook::emitJaggedEdge(
         + kCurrentShapeAabbOffset);
 
     for (size_t band = 0; band < 4; ++band) {
-        const float depth = kDepth[band];
+        float depth = kDepth[band];
+        if (dualSided) {
+            depth = std::min(depth, kDualSideMaxDepth);
+        }
 
-        float u0 = 0.0f;
-        float u1 = 1.0f;
-        float v0 = 0.0f;
-        float v1 = 1.0f;
+        float u0;
+        float u1;
 
-        switch (localEdge) {
-        case 0: // left
+        if (localEdge == 0) {
             u0 = 0.0f;
             u1 = depth;
-            v0 = kBand[band];
-            v1 = kBand[band + 1];
-            break;
-
-        case 2: // right
+        } else {
             u0 = 1.0f - depth;
             u1 = 1.0f;
-            v0 = kBand[band];
-            v1 = kBand[band + 1];
-            break;
-
-        case 1: // down
-            u0 = kBand[band];
-            u1 = kBand[band + 1];
-            v0 = 0.0f;
-            v1 = depth;
-            break;
-
-        case 3: // up
-            u0 = kBand[band];
-            u1 = kBand[band + 1];
-            v0 = 1.0f - depth;
-            v1 = 1.0f;
-            break;
-
-        default:
-            continue;
         }
+
+        const float v0 = kBand[band];
+        const float v1 = kBand[band + 1];
 
         AabbRaw strip = makeStrip(
             originalShape,
@@ -392,6 +452,76 @@ void PlankOverlayHook::emitJaggedEdge(
     *shape = originalShape;
 }
 
+bool PlankOverlayHook::sourceSurroundedOnFourSides(
+    void* blockCache,
+    const BlockPos& sourcePos,
+    uint8_t face
+) const {
+    if (!blockCache || !mGetBlock) return false;
+
+    const auto dirs = ctm::directionsForFace(face);
+
+    for (const auto& d : dirs) {
+        const BlockPos p{
+            sourcePos.x + d.x,
+            sourcePos.y + d.y,
+            sourcePos.z + d.z,
+        };
+
+        const void* neighbor = mGetBlock(blockCache, &p);
+
+        // The special suppression is only for a plank boxed by four
+        // NON-plank blocks. A neighboring plank means this is part of a plank
+        // row/wall and horizontal transitions must remain available.
+        if (!neighbor || isAirLike(neighbor) || isPlank(neighbor)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+const void* PlankOverlayHook::horizontalNeighbor(
+    void* blockCache,
+    void* blockTessellator,
+    const void* centerBlock,
+    const BlockPos& centerPos,
+    uint8_t face,
+    uint8_t localEdge
+) const {
+    if (!blockCache || !mGetBlock) return nullptr;
+
+    if (!gHorizontalCache.valid
+        || gHorizontalCache.blockTessellator != blockTessellator
+        || gHorizontalCache.centerBlock != centerBlock
+        || !samePos(gHorizontalCache.centerPos, centerPos)) {
+        gHorizontalCache.blockTessellator = blockTessellator;
+        gHorizontalCache.centerBlock = centerBlock;
+        gHorizontalCache.centerPos = centerPos;
+        gHorizontalCache.valid = true;
+
+        const std::array<BlockPos, 4> positions = {{
+            {centerPos.x - 1, centerPos.y, centerPos.z},
+            {centerPos.x + 1, centerPos.y, centerPos.z},
+            {centerPos.x, centerPos.y, centerPos.z - 1},
+            {centerPos.x, centerPos.y, centerPos.z + 1},
+        }};
+
+        for (size_t i = 0; i < positions.size(); ++i) {
+            gHorizontalCache.neighbors[i] =
+                mGetBlock(blockCache, &positions[i]);
+        }
+    }
+
+    const auto dirs = ctm::directionsForFace(face);
+    const auto d = dirs[localEdge & 3u];
+
+    if (d.y != 0) return nullptr;
+
+    return gHorizontalCache.neighbors[
+        horizontalIndex(d.x, d.z)];
+}
+
 std::string_view PlankOverlayHook::blockFullName(const void* block) {
     if (!block) return {};
 
@@ -407,7 +537,7 @@ std::string_view PlankOverlayHook::blockFullName(const void* block) {
 
     const auto* name = reinterpret_cast<const std::string*>(stringAddress);
     if (!name
-        || name->size() == 0
+        || name->empty()
         || name->size() > 256
         || name->data() == nullptr) {
         return {};
@@ -416,33 +546,57 @@ std::string_view PlankOverlayHook::blockFullName(const void* block) {
     return {name->data(), name->size()};
 }
 
-bool PlankOverlayHook::isPlank(const void* block) {
-    const std::string_view name = blockFullName(block);
-    return name.ends_with("_planks");
-}
+uint8_t PlankOverlayHook::blockClassFlags(const void* block) {
+    if (!block) return kClassAir;
 
-bool PlankOverlayHook::isGlassLike(const void* block) {
+    const uintptr_t key = reinterpret_cast<uintptr_t>(block);
+    auto& entry = gClassCache[(key >> 4u) & (gClassCache.size() - 1u)];
+
+    if (entry.block == block) {
+        return entry.flags;
+    }
+
     std::string_view name = blockFullName(block);
     constexpr std::string_view prefix = "minecraft:";
-    if (name.starts_with(prefix)) name.remove_prefix(prefix.size());
+    if (name.starts_with(prefix)) {
+        name.remove_prefix(prefix.size());
+    }
 
-    return name == "glass"
+    uint8_t flags = 0;
+
+    if (name.ends_with("_planks")) {
+        flags |= kClassPlank;
+    }
+
+    if (name == "glass"
         || name == "glass_pane"
         || name == "tinted_glass"
         || name.ends_with("_stained_glass")
-        || name.ends_with("_stained_glass_pane");
+        || name.ends_with("_stained_glass_pane")) {
+        flags |= kClassGlass;
+    }
+
+    if (name == "air"
+        || name == "cave_air"
+        || name == "void_air") {
+        flags |= kClassAir;
+    }
+
+    entry.block = block;
+    entry.flags = flags;
+    return flags;
+}
+
+bool PlankOverlayHook::isPlank(const void* block) {
+    return (blockClassFlags(block) & kClassPlank) != 0;
+}
+
+bool PlankOverlayHook::isGlassLike(const void* block) {
+    return (blockClassFlags(block) & kClassGlass) != 0;
 }
 
 bool PlankOverlayHook::isAirLike(const void* block) {
-    if (!block) return true;
-
-    std::string_view name = blockFullName(block);
-    constexpr std::string_view prefix = "minecraft:";
-    if (name.starts_with(prefix)) name.remove_prefix(prefix.size());
-
-    return name == "air"
-        || name == "cave_air"
-        || name == "void_air";
+    return !block || (blockClassFlags(block) & kClassAir) != 0;
 }
 
 bool PlankOverlayHook::isFullCube(const AabbRaw& shape) {
@@ -473,18 +627,6 @@ BlockPos PlankOverlayHook::neighborPos(
     };
 }
 
-BlockPos PlankOverlayHook::faceNormal(uint8_t face) {
-    switch (face) {
-    case 0: return {0, -1, 0};
-    case 1: return {0, 1, 0};
-    case 2: return {0, 0, -1};
-    case 3: return {0, 0, 1};
-    case 4: return {-1, 0, 0};
-    case 5: return {1, 0, 0};
-    default: return {0, 0, 0};
-    }
-}
-
 PlankOverlayHook::AabbRaw PlankOverlayHook::makeStrip(
     const AabbRaw& original,
     uint8_t face,
@@ -505,22 +647,22 @@ PlankOverlayHook::AabbRaw PlankOverlayHook::makeStrip(
     out.maxY = lerp(original.minY, original.maxY, v1);
 
     switch (face) {
-    case 2: // north: local left=+X, right=-X
+    case 2: // north: texture-left=+X, texture-right=-X
         out.minX = lerp(original.maxX, original.minX, u1);
         out.maxX = lerp(original.maxX, original.minX, u0);
         break;
 
-    case 3: // south: local left=-X, right=+X
+    case 3: // south: texture-left=-X, texture-right=+X
         out.minX = lerp(original.minX, original.maxX, u0);
         out.maxX = lerp(original.minX, original.maxX, u1);
         break;
 
-    case 4: // west: local left=-Z, right=+Z
+    case 4: // west: texture-left=-Z, texture-right=+Z
         out.minZ = lerp(original.minZ, original.maxZ, u0);
         out.maxZ = lerp(original.minZ, original.maxZ, u1);
         break;
 
-    case 5: // east: local left=+Z, right=-Z
+    case 5: // east: texture-left=+Z, texture-right=-Z
         out.minZ = lerp(original.maxZ, original.minZ, u1);
         out.maxZ = lerp(original.maxZ, original.minZ, u0);
         break;
