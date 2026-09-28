@@ -33,6 +33,7 @@ private:
     const TextureUvSet* onGetTexture(
         void*, const BlockPos*, const void*, uint8_t, int, const void*);
     bool onUseNew(const void*, bool);
+    void logDiagnostic(std::string message);
 
     static LegacyCtmHook* sInstance;
     ModConfig mConfig{};
@@ -46,5 +47,6 @@ private:
     std::atomic<uint64_t> mPipelineChecks{};
     std::atomic<uint64_t> mPipelineTrue{};
     std::atomic<uint64_t> mPipelineFalse{};
+    std::atomic<uint32_t> mDiagnosticLogCount{};
 };
 }

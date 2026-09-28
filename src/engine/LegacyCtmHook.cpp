@@ -9,6 +9,11 @@ bool LegacyCtmHook::install(const Addresses& a, const ModConfig& cfg, LogFn log)
     mAddresses = a;
     mConfig = cfg;
     mLog = std::move(log);
+    mGetTextureCalls.store(0, std::memory_order_relaxed);
+    mPipelineChecks.store(0, std::memory_order_relaxed);
+    mPipelineTrue.store(0, std::memory_order_relaxed);
+    mPipelineFalse.store(0, std::memory_order_relaxed);
+    mDiagnosticLogCount.store(0, std::memory_order_relaxed);
     sInstance = this;
 
     if (a.blockTessellatorGetTexture) {
@@ -23,6 +28,14 @@ bool LegacyCtmHook::install(const Addresses& a, const ModConfig& cfg, LogFn log)
             reinterpret_cast<void*>(a.useNewTessellation),
             reinterpret_cast<void*>(&LegacyCtmHook::useNewDetour),
             reinterpret_cast<void**>(&mOriginalUseNew)) == 0;
+    }
+
+    if (cfg.diagnostics) {
+        logDiagnostic(
+            std::string("Hook install state: _getTexture=")
+            + (mGetTextureInstalled ? "installed" : "FAILED")
+            + ", useNewTessellation="
+            + (mUseNewInstalled ? "installed" : "not-installed"));
     }
 
     return mGetTextureInstalled;
@@ -45,6 +58,23 @@ void LegacyCtmHook::uninstall() {
     mOriginalGetTexture = nullptr;
     mOriginalUseNew = nullptr;
     if (sInstance == this) sInstance = nullptr;
+}
+
+void LegacyCtmHook::logDiagnostic(std::string message) {
+    if (!mConfig.diagnostics || !mLog || mConfig.maxDiagnosticLogs <= 0) return;
+
+    const uint32_t limit = static_cast<uint32_t>(mConfig.maxDiagnosticLogs);
+    uint32_t current = mDiagnosticLogCount.load(std::memory_order_relaxed);
+    while (current < limit) {
+        if (mDiagnosticLogCount.compare_exchange_weak(
+                current,
+                current + 1,
+                std::memory_order_relaxed,
+                std::memory_order_relaxed)) {
+            mLog(message);
+            return;
+        }
+    }
 }
 
 const TextureUvSet* LegacyCtmHook::getTextureDetour(
@@ -72,7 +102,28 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
     int forcedVariant,
     const void* graphics
 ) {
-    mGetTextureCalls.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t count =
+        mGetTextureCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+
+    if (count == 1) {
+        std::string message =
+            "RUNTIME HIT: legacy BlockTessellator::_getTexture detour is executing";
+        if (pos) {
+            message += "; pos=("
+                + std::to_string(pos->x) + ","
+                + std::to_string(pos->y) + ","
+                + std::to_string(pos->z) + ")";
+        }
+        message += "; face=" + std::to_string(static_cast<unsigned>(face));
+        logDiagnostic(std::move(message));
+    } else if ((count & 0xFFFFu) == 0) {
+        const auto s = stats();
+        logDiagnostic(
+            "RUNTIME STATS: getTexture=" + std::to_string(s.getTextureCalls)
+            + ", pipelineChecks=" + std::to_string(s.pipelineChecks)
+            + ", newTrue=" + std::to_string(s.pipelineTrue)
+            + ", newFalse=" + std::to_string(s.pipelineFalse));
+    }
 
     // Diagnostic-only by design. No block is matched and no UV is replaced here.
     // In particular, glass is deliberately untouched so BedrockTools' Connected
@@ -82,21 +133,38 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
 
 bool LegacyCtmHook::onUseNew(const void* block, bool onlyNew) {
     const bool result = mOriginalUseNew(block, onlyNew);
-    mPipelineChecks.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t count =
+        mPipelineChecks.fetch_add(1, std::memory_order_relaxed) + 1;
+
     if (result) {
         mPipelineTrue.fetch_add(1, std::memory_order_relaxed);
     } else {
         mPipelineFalse.fetch_add(1, std::memory_order_relaxed);
     }
+
+    if (count == 1) {
+        logDiagnostic(
+            std::string("RUNTIME HIT: BlockTessellatorPipeline::useNewTessellation detour is executing")
+            + "; onlyNew=" + (onlyNew ? "true" : "false")
+            + "; result=" + (result ? "true" : "false"));
+    } else if ((count & 0x3FFFu) == 0) {
+        const auto s = stats();
+        logDiagnostic(
+            "RUNTIME STATS: getTexture=" + std::to_string(s.getTextureCalls)
+            + ", pipelineChecks=" + std::to_string(s.pipelineChecks)
+            + ", newTrue=" + std::to_string(s.pipelineTrue)
+            + ", newFalse=" + std::to_string(s.pipelineFalse));
+    }
+
     return result;
 }
 
 HookStats LegacyCtmHook::stats() const {
     return {
-        mGetTextureCalls.load(),
-        mPipelineChecks.load(),
-        mPipelineTrue.load(),
-        mPipelineFalse.load()
+        mGetTextureCalls.load(std::memory_order_relaxed),
+        mPipelineChecks.load(std::memory_order_relaxed),
+        mPipelineTrue.load(std::memory_order_relaxed),
+        mPipelineFalse.load(std::memory_order_relaxed)
     };
 }
 }
