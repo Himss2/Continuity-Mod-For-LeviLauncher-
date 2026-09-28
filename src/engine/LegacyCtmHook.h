@@ -33,6 +33,20 @@ public:
     bool ruleEngineEnabled() const {
         return mRuleEngineEnabled.load(std::memory_order_acquire);
     }
+
+    const TextureUvSet* queryOriginalTexture(
+        void* self,
+        const BlockPos* pos,
+        const void* block,
+        uint8_t face,
+        int forcedVariant,
+        const void* graphics
+    ) const {
+        return mOriginalGetTexture
+            ? mOriginalGetTexture(self, pos, block, face, forcedVariant, graphics)
+            : nullptr;
+    }
+
     HookStats stats() const;
 
 private:

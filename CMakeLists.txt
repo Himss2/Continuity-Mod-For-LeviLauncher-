@@ -9,7 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(MOD_ID "continuity_bedrock" CACHE STRING "LeviLauncher mod package directory name")
 set(MOD_NAME "Continuity Bedrock" CACHE STRING "LeviLauncher mod display name")
 set(MOD_AUTHOR "Himss2" CACHE STRING "LeviLauncher mod author")
-set(MOD_VERSION "0.5.2-re-poc" CACHE STRING "LeviLauncher mod version")
+set(MOD_VERSION "0.6.0-plank-poc" CACHE STRING "LeviLauncher mod version")
 set(MOD_LIBRARY_NAME "continuity_bedrock" CACHE STRING "Native library name")
 set(MOD_MINECRAFT_VERSIONS "[\"1.26.52.3\"]" CACHE STRING "Raw JSON array")
 
@@ -86,6 +86,7 @@ add_library(${MOD_LIBRARY_NAME} SHARED
     src/engine/RuleEngine.cpp
     src/engine/SimpleProcessors.cpp
     src/engine/LegacyCtmHook.cpp
+    src/engine/PlankOverlayHook.cpp
     src/util/Properties.cpp
 )
 target_include_directories(${MOD_LIBRARY_NAME} PRIVATE src "${LEVI_PRELOADER_INCLUDE_DIR}")

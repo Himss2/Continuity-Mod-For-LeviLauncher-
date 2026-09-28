@@ -1,3 +1,19 @@
+## Test branch: plank overlay POC
+
+Branch `test/plank-overlay-poc` adds the first Bedrock **extra-quad style** experiment.
+
+The base block face is rendered normally. On side faces of a full cube, an adjacent `*_planks` block can add four irregular strips onto the target face. The extra strips reuse the adjacent plank's live vanilla `TextureUVCoordinateSet`; no custom plank PNG is bundled, so the test follows the currently loaded terrain atlas.
+
+This is intentionally narrower than full Continuity overlay parity:
+- side faces only;
+- full-cube targets only;
+- plank source blocks only;
+- no glass;
+- no slab/stair overlay geometry;
+- corners may overlap until the standard 17-state overlay resolver is ported.
+
+The branch is a renderer-path validation before brick and generic overlay rules are implemented.
+
 # Continuity Bedrock — LeviLauncher
 
 Native Bedrock reimplementation experiment inspired by Java Continuity.
