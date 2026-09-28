@@ -15,6 +15,54 @@
     },
     "continuity_bookshelf_3": {
       "textures": "textures/blocks/continuity/bookshelf/3"
+    },
+    "continuity_cut_sandstone_0": {
+      "textures": "textures/blocks/continuity/cut_sandstone/0"
+    },
+    "continuity_cut_sandstone_1": {
+      "textures": "textures/blocks/continuity/cut_sandstone/1"
+    },
+    "continuity_cut_sandstone_2": {
+      "textures": "textures/blocks/continuity/cut_sandstone/2"
+    },
+    "continuity_cut_sandstone_3": {
+      "textures": "textures/blocks/continuity/cut_sandstone/3"
+    },
+    "continuity_chiseled_sandstone_0": {
+      "textures": "textures/blocks/continuity/chiseled_sandstone/0"
+    },
+    "continuity_chiseled_sandstone_1": {
+      "textures": "textures/blocks/continuity/chiseled_sandstone/1"
+    },
+    "continuity_chiseled_sandstone_2": {
+      "textures": "textures/blocks/continuity/chiseled_sandstone/2"
+    },
+    "continuity_chiseled_sandstone_3": {
+      "textures": "textures/blocks/continuity/chiseled_sandstone/3"
+    },
+    "continuity_cut_red_sandstone_0": {
+      "textures": "textures/blocks/continuity/cut_red_sandstone/0"
+    },
+    "continuity_cut_red_sandstone_1": {
+      "textures": "textures/blocks/continuity/cut_red_sandstone/1"
+    },
+    "continuity_cut_red_sandstone_2": {
+      "textures": "textures/blocks/continuity/cut_red_sandstone/2"
+    },
+    "continuity_cut_red_sandstone_3": {
+      "textures": "textures/blocks/continuity/cut_red_sandstone/3"
+    },
+    "continuity_chiseled_red_sandstone_0": {
+      "textures": "textures/blocks/continuity/chiseled_red_sandstone/0"
+    },
+    "continuity_chiseled_red_sandstone_1": {
+      "textures": "textures/blocks/continuity/chiseled_red_sandstone/1"
+    },
+    "continuity_chiseled_red_sandstone_2": {
+      "textures": "textures/blocks/continuity/chiseled_red_sandstone/2"
+    },
+    "continuity_chiseled_red_sandstone_3": {
+      "textures": "textures/blocks/continuity/chiseled_red_sandstone/3"
     }
   }
 }

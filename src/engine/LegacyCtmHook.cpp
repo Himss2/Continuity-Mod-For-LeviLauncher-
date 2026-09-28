@@ -101,7 +101,7 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
         || !self
         || !pos
         || !block
-        || !mConfig.enableBookshelfPoc
+        || !mConfig.enableRuleEngine
         || !mRules
         || !mCacheGetBlock
         || !mGetTextureUv) {

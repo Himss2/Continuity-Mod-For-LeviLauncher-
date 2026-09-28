@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Continuity Bedrock",
-  "description": "Connected glass is intentionally excluded; current visual POC is horizontal bookshelf.",
+  "description": "Compiled Continuity rule engine. Connected glass is delegated to BedrockTools.",
   "type": "object",
   "properties": {
     "version": {"type":"integer", "readOnly":true},
     "enabled": {"type":"boolean"},
-    "enableBookshelfPoc": {
+    "enableRuleEngine": {
       "type":"boolean",
-      "description":"Enable the compiled Continuity rule engine."
+      "description":"Enable compiled Continuity .properties rules."
     },
     "diagnostics": {"type":"boolean"},
     "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":32}

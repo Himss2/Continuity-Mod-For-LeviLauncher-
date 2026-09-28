@@ -92,6 +92,17 @@ The active hook:
 4. resolves atlas entries once per rule;
 5. performs neighbour queries only after block, face and source texture match.
 
+## Bundled vanilla-style validation blocks
+
+Besides bookshelf, the bundled resource pack now includes Continuity's default vanilla-style horizontal CTM assets for:
+
+- `minecraft:cut_sandstone`
+- `minecraft:chiseled_sandstone`
+- `minecraft:cut_red_sandstone`
+- `minecraft:chiseled_red_sandstone`
+
+These rules use `matchBlocks` + `faces=sides` + `connect=block`. They intentionally do not depend on Bedrock's vanilla atlas key naming, which can differ from Java/OptiFine naming.
+
 ## Connected glass policy
 
 **Connected glass and glass panes are intentionally excluded.**

@@ -74,9 +74,9 @@ bool ContinuityMod::enable() {
         log.error("Failed to install generic Continuity legacy hook");
     } else {
         log.info(
-            "Generic rule hook active; rules={}, visualPOC={}",
+            "Generic rule hook active; rules={}, ruleEngine={}",
             mRules.ruleCount(),
-            mConfig.enableBookshelfPoc);
+            mConfig.enableRuleEngine);
     }
 
     return true;
