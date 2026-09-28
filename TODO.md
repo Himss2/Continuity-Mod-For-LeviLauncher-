@@ -1,29 +1,34 @@
 # Roadmap
 
-## Runtime test 1
-- Build/import with default config.
-- Confirm `Atlas probe ready`.
-- Confirm whether `glassLegacy` becomes non-zero.
+## Current diagnostic pass
+- Verify legacy `BlockTessellator::_getTexture` hook stability.
+- Measure legacy-vs-new tessellation activity.
+- Keep rendering unchanged.
+- Keep connected glass fully delegated to BedrockTools.
 
-## Runtime test 2 (only if glassLegacy > 0)
-- Set `enableLegacyCtm=true`.
-- Validate 47-tile selection and face orientation.
-- Correct `directionsForFace()` parity if any face is mirrored/rotated.
+## First non-glass visual POC
+- Use a Continuity-compatible non-glass rule, preferably horizontal bookshelf.
+- Resolve the vanilla source texture plus 4 replacement atlas entries.
+- Validate left/right face orientation.
+- Validate neighbor lookup through the tessellator cache.
 
-## If glassLegacy == 0
-- Keep legacy CTM disabled.
-- RE the new-pipeline mutation point around `SurfaceExtractionStep::run` / `FaceMaterial` / `MaterialFaceAttributes`.
-- Prefer changing `mTextureIndex`/UV attributes rather than post-editing final MeshData.
-
-## Compatibility layer
+## Generic compatibility layer
 - Compile `matchBlocks` / `matchTiles` once on resource reload.
 - Add connect=block/state/tile.
 - Add faces / orientation / innerSeams.
 - Add horizontal, vertical, fixed, random, repeat.
+- Add generic 47-tile CTM for non-glass rules.
 - Add multipass.
 
+## New renderer pipeline
+- RE the mutation point around `SurfaceExtractionStep::run`, `FaceMaterial`, and `MaterialFaceAttributes`.
+- Prefer texture-index/UV mutation before final MeshData emission.
+
 ## Later renderer features
-- compact CTM: geometry split / extra faces
-- overlay: extra-quad path
-- emissive: second material/quad or lighting/material override
-- glass-pane culling
+- compact CTM
+- overlay
+- emissive
+- custom block layers
+
+## Explicit non-goal
+- Do not add connected-glass block/pane rendering while BedrockTools provides that module.
