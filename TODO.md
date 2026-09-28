@@ -21,7 +21,8 @@
 ## Next compatibility work
 - Add controlled test rules/assets for each new processor.
 - connect=state
-- connect=tile
+- connect=tile for method=top ✅
+- connect=tile for horizontal/vertical/h+v/v+h/ctm
 - block-state predicates
 - top with correct AXIS handling
 - orient=state_axis

@@ -63,6 +63,12 @@
     },
     "continuity_chiseled_red_sandstone_3": {
       "textures": "textures/blocks/continuity/chiseled_red_sandstone/3"
+    },
+    "continuity_sandstone_top_0": {
+      "textures": "textures/blocks/continuity/sandstone_top/0"
+    },
+    "continuity_red_sandstone_top_0": {
+      "textures": "textures/blocks/continuity/red_sandstone_top/0"
     }
   }
 }

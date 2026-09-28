@@ -103,6 +103,28 @@ Besides bookshelf, the bundled resource pack now includes Continuity's default v
 
 These rules use `matchBlocks` + `faces=sides` + `connect=block`. They intentionally do not depend on Bedrock's vanilla atlas key naming, which can differ from Java/OptiFine naming.
 
+## Cross-block continuity
+
+Version **0.4.0-re-poc** adds the first true cross-BlockType connection path:
+
+- `method=top`
+- `connect=tile`
+- matching is based on the face's source texture rather than BlockType equality
+- the neighbor's vanilla texture is queried through the original `BlockTessellator::_getTexture` trampoline, so the Continuity hook does not recurse
+
+Bundled default Continuity rules:
+
+```properties
+method=top
+matchTiles=sandstone
+tiles=continuity_sandstone_top_0
+connect=tile
+```
+
+and the equivalent rule for `red_sandstone`.
+
+This allows blocks with different IDs—such as full blocks, slabs, or stairs—to participate when the rendered face uses the same sandstone tile. The current `top` implementation uses Continuity's default Y axis path; AXIS-aware rotated blocks are deferred until block-state/axis support is added.
+
 ## Connected glass policy
 
 **Connected glass and glass panes are intentionally excluded.**

@@ -23,12 +23,14 @@ enum class RuleMethod : uint8_t {
     VerticalHorizontal,
     Random,
     Repeat,
+    Top,
     Ctm,
 };
 
 enum class ConnectMode : uint8_t {
     None,
     Block,
+    Tile,
 };
 
 struct RuleDefinition {
@@ -62,6 +64,8 @@ public:
     using LogFn = std::function<void(const std::string&)>;
     using CacheGetBlockFn = const void* (*)(void*, const BlockPos*);
     using GetTextureUvFn = TextureUvSet (*)(const std::string&, int, int);
+    using GetTextureFn =
+        const TextureUvSet* (*)(void*, const BlockPos*, const void*, uint8_t, int, const void*);
 
     bool load(const std::filesystem::path& rulesDir, LogFn log);
     size_t ruleCount() const { return mRules.size(); }
@@ -74,6 +78,9 @@ public:
         const TextureUvSet& original,
         CacheGetBlockFn getBlock,
         GetTextureUvFn getTextureUv,
+        GetTextureFn getTexture,
+        void* tessellator,
+        int forcedVariant,
         uint64_t hookCallCount
     );
 

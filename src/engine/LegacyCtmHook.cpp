@@ -119,6 +119,9 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
         *original,
         mCacheGetBlock,
         mGetTextureUv,
+        reinterpret_cast<RuleEngine::GetTextureFn>(mOriginalGetTexture),
+        self,
+        forcedVariant,
         callCount);
 
     if (replacement != original) {

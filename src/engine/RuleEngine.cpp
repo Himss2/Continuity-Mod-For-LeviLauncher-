@@ -287,6 +287,7 @@ bool requiresConnection(RuleMethod method) {
     case RuleMethod::Vertical:
     case RuleMethod::HorizontalVertical:
     case RuleMethod::VerticalHorizontal:
+    case RuleMethod::Top:
     case RuleMethod::Ctm:
         return true;
     default:
@@ -320,6 +321,7 @@ std::optional<RuleMethod> parseMethod(std::string value) {
         return RuleMethod::VerticalHorizontal;
     if (value == "random") return RuleMethod::Random;
     if (value == "repeat") return RuleMethod::Repeat;
+    if (value == "top") return RuleMethod::Top;
     if (value == "ctm" || value == "glass") return RuleMethod::Ctm;
 
     return std::nullopt;
@@ -332,6 +334,7 @@ std::optional<size_t> exactTileCount(RuleMethod method) {
     case RuleMethod::Vertical: return 4;
     case RuleMethod::HorizontalVertical: return 7;
     case RuleMethod::VerticalHorizontal: return 7;
+    case RuleMethod::Top: return 1;
     case RuleMethod::Ctm: return 47;
     default: return std::nullopt;
     }
@@ -411,11 +414,18 @@ std::optional<RuleDefinition> compileRule(
                 ? props.at("connect")
                 : (rule.matchBlocks.empty() ? "tile" : "block"));
 
-        if (connect != "block") {
-            error = "current connecting processors support connect=block only";
+        if (connect == "block") {
+            rule.connect = ConnectMode::Block;
+        } else if (connect == "tile") {
+            if (rule.method != RuleMethod::Top) {
+                error = "connect=tile is currently enabled for method=top only";
+                return std::nullopt;
+            }
+            rule.connect = ConnectMode::Tile;
+        } else {
+            error = "current stage supports connect=block and top/connect=tile";
             return std::nullopt;
         }
-        rule.connect = ConnectMode::Block;
     }
 
     bool facesValid = false;
@@ -515,6 +525,7 @@ std::string methodName(RuleMethod method) {
     case RuleMethod::VerticalHorizontal: return "vertical+horizontal";
     case RuleMethod::Random: return "random";
     case RuleMethod::Repeat: return "repeat";
+    case RuleMethod::Top: return "top";
     case RuleMethod::Ctm: return "ctm";
     }
     return "?";
@@ -729,6 +740,9 @@ const TextureUvSet* RuleEngine::process(
     const TextureUvSet& original,
     CacheGetBlockFn getBlock,
     GetTextureUvFn getTextureUv,
+    GetTextureFn getTexture,
+    void* tessellator,
+    int forcedVariant,
     uint64_t hookCallCount
 ) {
     if (!block
@@ -861,6 +875,44 @@ const TextureUvSet* RuleEngine::process(
                 rule->definition.height,
                 rule->definition.symmetry);
             break;
+
+        case RuleMethod::Top: {
+            // Continuity TopQuadProcessor defaults to Axis.Y when the block
+            // has no AXIS property. Sandstone/red sandstone use this path.
+            // Top/bottom faces are never replaced; side faces connect to the
+            // block one position above.
+            if (!blockCache || !getBlock || face < 2) continue;
+
+            const BlockPos above{pos.x, pos.y + 1, pos.z};
+            const void* neighbor = getBlock(blockCache, &above);
+            if (!neighbor) continue;
+
+            bool connected = false;
+
+            if (rule->definition.connect == ConnectMode::Block) {
+                connected =
+                    reinterpret_cast<uintptr_t>(blockType(neighbor))
+                    == currentType;
+            } else if (rule->definition.connect == ConnectMode::Tile) {
+                if (!getTexture || !tessellator) continue;
+
+                const TextureUvSet* neighborTexture = getTexture(
+                    tessellator,
+                    &above,
+                    neighbor,
+                    face,
+                    forcedVariant,
+                    nullptr);
+
+                connected =
+                    neighborTexture
+                    && sameUvRect(*neighborTexture, original);
+            }
+
+            if (!connected) continue;
+            tile = 0;
+            break;
+        }
 
         case RuleMethod::Ctm:
             if (!blockCache || !getBlock) continue;
