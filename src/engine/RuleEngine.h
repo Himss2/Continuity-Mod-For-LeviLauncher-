@@ -1,6 +1,8 @@
 #pragma once
 
+#include "engine/SimpleProcessors.h"
 #include "engine/Types.h"
+
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -14,22 +16,45 @@
 namespace continuity_bedrock::engine {
 
 enum class RuleMethod : uint8_t {
+    Fixed,
     Horizontal,
+    Vertical,
+    HorizontalVertical,
+    VerticalHorizontal,
+    Random,
+    Repeat,
+    Ctm,
 };
 
 enum class ConnectMode : uint8_t {
+    None,
     Block,
 };
 
 struct RuleDefinition {
     std::string sourcePath;
-    RuleMethod method{RuleMethod::Horizontal};
-    ConnectMode connect{ConnectMode::Block};
+    RuleMethod method{RuleMethod::Fixed};
+    ConnectMode connect{ConnectMode::None};
+
     std::vector<std::string> matchBlocks;
     std::vector<std::string> matchTiles;
     std::vector<std::string> tiles;
+
     uint8_t faceMask{0x3F};
     bool innerSeams{false};
+
+    // random/repeat
+    processor::Symmetry symmetry{processor::Symmetry::None};
+
+    // random
+    std::vector<int> weights;
+    int weightSum{0};
+    int randomLoops{0};
+    bool linked{false};
+
+    // repeat
+    int width{0};
+    int height{0};
 };
 
 class RuleEngine {
@@ -65,15 +90,33 @@ private:
         std::atomic_bool loggedApplied{false};
     };
 
-    bool ensureAtlas(RuntimeRule& rule, GetTextureUvFn getTextureUv, uint64_t hookCallCount);
-    bool sourceTileMatches(const RuntimeRule& rule, const TextureUvSet& original) const;
-    bool blockRuleMatches(const RuntimeRule& rule, std::string_view fullName) const;
+    bool ensureAtlas(
+        RuntimeRule& rule,
+        GetTextureUvFn getTextureUv,
+        uint64_t hookCallCount
+    );
+
+    bool sourceTileMatches(
+        const RuntimeRule& rule,
+        const TextureUvSet& original
+    ) const;
+
+    bool blockRuleMatches(
+        const RuntimeRule& rule,
+        std::string_view fullName
+    ) const;
+
+    std::vector<RuntimeRule*> resolveCandidates(
+        uintptr_t blockType,
+        const void* block
+    ) const;
 
     static const void* blockType(const void* block);
     static std::string_view blockFullName(const void* block);
 
     std::vector<std::unique_ptr<RuntimeRule>> mRules;
     LogFn mLog;
+    uint64_t mGeneration{1};
 };
 
 }

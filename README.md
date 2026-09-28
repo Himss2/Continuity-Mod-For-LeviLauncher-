@@ -1,10 +1,18 @@
 # Continuity Bedrock — LeviLauncher
 
-Native Bedrock reimplementation experiment inspired by Java Continuity. Current target: **Minecraft Bedrock 1.26.52.3 arm64**, LeviLauncher Android 1.5.24, preloader-android 0.2.2, Android NDK 28.2.13676358.
+Native Bedrock reimplementation experiment inspired by Java Continuity.
 
-## Current milestone: generic horizontal rule engine
+Current target:
+- Minecraft Bedrock **1.26.52.3 arm64**
+- LeviLauncher Android 1.5.24
+- preloader-android 0.2.2
+- Android NDK 28.2.13676358
 
-The renderer hook no longer contains bookshelf-specific matching. Runtime behavior now follows this pipeline:
+## Current milestone: multi-method compiled rule engine
+
+The legacy renderer path was validated on-device and the renderer hook no longer contains block-specific CTM logic.
+
+Runtime flow:
 
 ```text
 resources/continuity/rules/*.properties
@@ -13,53 +21,86 @@ properties scanner/compiler
         ↓
 compiled RuleDefinition
         ↓
-block-type candidate selection
+BlockType candidate cache
         ↓
-source atlas match
+matchBlocks / matchTiles / faces
         ↓
 method processor
         ↓
-neighbor lookup
+cached neighbour lookup when required
         ↓
 replacement TextureUVCoordinateSet
 ```
 
-The first supported processor is:
+Supported methods in **0.3.0-re-poc**:
 
-- `method=horizontal`
-- alias `method=bookshelf`
-- `connect=block`
-- `faces=all|sides|down|up|north|south|west|east`
-- `orient=none`
-- exactly 4 replacement tiles
-- `matchBlocks` and/or `matchTiles`
+- `fixed`
+- `horizontal` / `bookshelf`
+- `vertical`
+- `horizontal+vertical` / `h+v`
+- `vertical+horizontal` / `v+h`
+- `random`
+- `repeat`
+- `ctm` / `glass` algorithmically, but glass targets are rejected
 
-The bundled `bookshelf.properties` is now only a test rule for that generic engine.
+Current connecting-method support is `connect=block`. Current orientation support is `orient=none`.
 
-## Connected glass policy
+### Method details
 
-**Connected glass is intentionally excluded.**
+`fixed`
+- exactly 1 tile
 
-BedrockTools already owns connected rendering for glass blocks and panes. The rule compiler rejects known glass/pane targets so this mod does not compete with BedrockTools over the same renderer path.
+`horizontal`
+- exactly 4 tiles
+- Continuity mapping `{3,2,0,1}`
 
-The generic 47-tile CTM lookup remains in the source because it will be used for future non-glass `method=ctm` support.
+`vertical`
+- exactly 4 tiles
+- same Continuity mapping `{3,2,0,1}` applied to local down/up
+
+`horizontal+vertical` and `vertical+horizontal`
+- exactly 7 tiles
+- exact secondary connection lookup tables ported from Continuity
+
+`random`
+- one or more tiles
+- deterministic position/face hash compatible with Continuity
+- supports `weights`, `randomLoops=0..9`, `symmetry=none|opposite|all`, and `linked=true|false`
+- weights are normalized once during rule compilation, not in the render hot path
+
+`repeat`
+- requires positive `width` and `height`
+- tile count must equal `width*height`
+- face projection follows Continuity/OptiFine formulas
+- supports `symmetry=none|opposite|all`
+- `orient=none` only for now
+
+`ctm`
+- exactly 47 tiles
+- exact Continuity 256-mask → 47-tile lookup
+- 4 cardinal + conditional diagonal neighbour checks
+- non-glass targets only
 
 ## Performance
 
-The expensive `useNewTessellation` diagnostic hook was removed after runtime testing showed the legacy BlockTessellator path is overwhelmingly dominant on the tested 1.26.52.3 build.
+The `useNewTessellation` diagnostic hook was removed after runtime validation showed the legacy BlockTessellator path dominates on the tested build.
 
-The active hot path now:
-
+The active hook:
 1. calls vanilla `BlockTessellator::_getTexture`;
-2. uses a thread-local cache for the current `BlockType` candidate rules;
+2. caches candidate rules per `BlockType` per tessellation thread;
 3. returns immediately when no rule can match;
-4. only queries neighbors after a rule, face, block and source tile all match.
+4. resolves atlas entries once per rule;
+5. performs neighbour queries only after block, face and source texture match.
 
-Atlas entries are resolved lazily once per rule and cached.
+## Connected glass policy
 
-## Test rule
+**Connected glass and glass panes are intentionally excluded.**
 
-`resources/continuity/rules/bookshelf.properties`:
+BedrockTools already owns Connected Glass. The compiler rejects known glass/pane targets even though the generic `ctm` processor exists, preventing both mods from competing over the same rendering path.
+
+## Bundled validation rule
+
+The bundled `bookshelf.properties` remains as a non-glass validation rule:
 
 ```properties
 matchBlocks=minecraft:bookshelf
@@ -72,57 +113,33 @@ innerSeams=false
 orient=none
 ```
 
-Continuity horizontal mapping:
+## Not implemented yet
 
-```text
-no neighbours  -> tile 3
-left only      -> tile 2
-right only     -> tile 0
-left + right   -> tile 1
-```
+- `top`: requires correct block-axis/state handling plus connection parity
+- `connect=state`
+- `connect=tile`
+- block-state predicates
+- `orient=state_axis`
+- `orient=texture`
+- `<skip>` / `<default>`
+- multipass
+- compact CTM geometry splitting
+- overlays
+- emissive extra-quad/material path
 
-## Build
+These are intentionally deferred rather than approximated incorrectly.
 
-```bash
-cmake -S . -B build-config -G Ninja
-cmake --build build-config --target levi_generate_config
-
-cmake -S . -B build-arm64 -G Ninja \
-  -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-28 \
-  -DANDROID_STL=c++_shared \
-  -DLEVI_PACKAGE_CONFIG_DIR="$PWD/build-config/generated-config"
-
-cmake --build build-arm64 --target levi_package
-```
-
-## RE anchors for 1.26.52.3
+## RE anchors — Minecraft 1.26.52.3
 
 - `BlockTessellator::_getTexture`: RVA `0xA67583C`
 - `BlockTessellatorCache::getBlock`: RVA `0xA65CAD4`
 - `BlockGraphics::getTextureUVCoordinateSet`: RVA `0xA66EB14`
 
-Use:
+Validate another binary with:
 
 ```bash
 python scripts/verify_signatures.py /path/to/libminecraftpe.so
 ```
-
-before testing another binary.
-
-## Next
-
-The next processors should be implemented on top of the same compiled-rule path rather than adding block-specific hooks:
-
-- vertical
-- fixed
-- top
-- random
-- repeat
-- generic 47-tile CTM for non-glass targets
-- multipass
-- later: compact CTM, overlay, emissive
 
 ## License
 

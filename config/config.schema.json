@@ -8,7 +8,7 @@
     "enabled": {"type":"boolean"},
     "enableBookshelfPoc": {
       "type":"boolean",
-      "description":"Enable the current generic compiled-rule runtime (currently method=horizontal/connect=block)."
+      "description":"Enable the compiled Continuity rule engine."
     },
     "diagnostics": {"type":"boolean"},
     "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":32}

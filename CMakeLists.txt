@@ -9,7 +9,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(MOD_ID "continuity_bedrock" CACHE STRING "LeviLauncher mod package directory name")
 set(MOD_NAME "Continuity Bedrock" CACHE STRING "LeviLauncher mod display name")
 set(MOD_AUTHOR "Himss2" CACHE STRING "LeviLauncher mod author")
-set(MOD_VERSION "0.2.0-re-poc" CACHE STRING "LeviLauncher mod version")
+set(MOD_VERSION "0.3.0-re-poc" CACHE STRING "LeviLauncher mod version")
 set(MOD_LIBRARY_NAME "continuity_bedrock" CACHE STRING "Native library name")
 set(MOD_MINECRAFT_VERSIONS "[\"1.26.52.3\"]" CACHE STRING "Raw JSON array")
 
@@ -84,6 +84,7 @@ add_library(${MOD_LIBRARY_NAME} SHARED
     src/engine/Signatures.cpp
     src/engine/CtmResolver.cpp
     src/engine/RuleEngine.cpp
+    src/engine/SimpleProcessors.cpp
     src/engine/LegacyCtmHook.cpp
     src/util/Properties.cpp
 )

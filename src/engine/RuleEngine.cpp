@@ -6,8 +6,11 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <iterator>
+#include <limits>
 #include <optional>
 #include <sstream>
+#include <unordered_map>
 
 namespace continuity_bedrock::engine {
 
@@ -56,9 +59,6 @@ bool parseInt(std::string_view value, int& out) {
 }
 
 std::vector<std::string> expandTileToken(const std::string& token) {
-    // Supports Continuity-style compact ranges such as:
-    //   0-3
-    //   continuity_bookshelf_0-3
     const size_t dash = token.rfind('-');
     if (dash == std::string::npos || dash + 1 >= token.size()) return {token};
 
@@ -107,12 +107,22 @@ std::string normalizeBlockName(std::string name) {
     return name;
 }
 
+bool hasUnsupportedStatePredicate(std::string_view value) {
+    return value.find('[') != std::string_view::npos
+        || value.find('=') != std::string_view::npos;
+}
+
 bool isGlassTarget(std::string_view raw) {
     std::string value = lower(std::string(raw));
+
     const size_t colon = value.find(':');
     if (colon != std::string::npos) value.erase(0, colon + 1);
 
-    // Strip the most common block-state suffix forms before classification.
+    const size_t slash = value.find_last_of("/\\");
+    if (slash != std::string::npos) value.erase(0, slash + 1);
+
+    if (value.ends_with(".png")) value.resize(value.size() - 4);
+
     const size_t state = value.find_first_of("[=");
     if (state != std::string::npos) value.resize(state);
 
@@ -160,13 +170,108 @@ uint8_t parseFaces(const std::string& value, bool& valid) {
     return mask;
 }
 
-bool parseBool(const util::Properties& props, std::string_view key, bool fallback) {
+bool parseBool(
+    const util::Properties& props,
+    std::string_view key,
+    bool fallback
+) {
     const auto it = props.find(std::string(key));
     if (it == props.end()) return fallback;
+
     const auto value = lower(trim(it->second));
     if (value == "true" || value == "1" || value == "yes") return true;
     if (value == "false" || value == "0" || value == "no") return false;
     return fallback;
+}
+
+processor::Symmetry parseSymmetry(
+    const util::Properties& props,
+    bool& valid
+) {
+    valid = true;
+    const auto it = props.find("symmetry");
+    if (it == props.end()) return processor::Symmetry::None;
+
+    const std::string value = lower(trim(it->second));
+    if (value == "none") return processor::Symmetry::None;
+    if (value == "opposite") return processor::Symmetry::Opposite;
+    if (value == "all") return processor::Symmetry::All;
+
+    valid = false;
+    return processor::Symmetry::None;
+}
+
+std::vector<int> parseWeights(
+    const std::string& value,
+    bool& valid
+) {
+    valid = true;
+    std::vector<int> weights;
+
+    for (const auto& token : splitList(value)) {
+        const size_t dash = token.find('-');
+
+        if (dash != std::string::npos) {
+            int first = 0;
+            int last = 0;
+            if (!parseInt(std::string_view(token).substr(0, dash), first)
+                || !parseInt(std::string_view(token).substr(dash + 1), last)
+                || first <= 0
+                || last < first
+                || last - first > 4096) {
+                valid = false;
+                return {};
+            }
+
+            for (int weight = first; weight <= last; ++weight) {
+                weights.push_back(weight);
+            }
+        } else {
+            int weight = 0;
+            if (!parseInt(token, weight) || weight <= 0) {
+                valid = false;
+                return {};
+            }
+            weights.push_back(weight);
+        }
+    }
+
+    return weights;
+}
+
+bool normalizeWeights(
+    std::vector<int>& weights,
+    size_t tileCount,
+    int& weightSum
+) {
+    weightSum = 0;
+    if (weights.empty()) return true;
+
+    if (weights.size() > tileCount) {
+        weights.resize(tileCount);
+    }
+
+    for (int weight : weights) {
+        if (weight <= 0 || weightSum > std::numeric_limits<int>::max() - weight) {
+            return false;
+        }
+        weightSum += weight;
+    }
+
+    if (weights.size() < tileCount) {
+        if (weights.empty()) return true;
+
+        const int average = weightSum / static_cast<int>(weights.size());
+        if (average <= 0) return false;
+
+        while (weights.size() < tileCount) {
+            if (weightSum > std::numeric_limits<int>::max() - average) return false;
+            weights.push_back(average);
+            weightSum += average;
+        }
+    }
+
+    return weightSum > 0;
 }
 
 bool plausible(const TextureUvSet& value) {
@@ -174,6 +279,62 @@ bool plausible(const TextureUvSet& value) {
         && value.v1 > value.v0
         && value.texWidth > 0
         && value.texHeight > 0;
+}
+
+bool requiresConnection(RuleMethod method) {
+    switch (method) {
+    case RuleMethod::Horizontal:
+    case RuleMethod::Vertical:
+    case RuleMethod::HorizontalVertical:
+    case RuleMethod::VerticalHorizontal:
+    case RuleMethod::Ctm:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool requiresOrientationNone(RuleMethod method) {
+    switch (method) {
+    case RuleMethod::Horizontal:
+    case RuleMethod::Vertical:
+    case RuleMethod::HorizontalVertical:
+    case RuleMethod::VerticalHorizontal:
+    case RuleMethod::Repeat:
+    case RuleMethod::Ctm:
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::optional<RuleMethod> parseMethod(std::string value) {
+    value = lower(trim(std::move(value)));
+
+    if (value == "fixed") return RuleMethod::Fixed;
+    if (value == "horizontal" || value == "bookshelf") return RuleMethod::Horizontal;
+    if (value == "vertical") return RuleMethod::Vertical;
+    if (value == "horizontal+vertical" || value == "h+v")
+        return RuleMethod::HorizontalVertical;
+    if (value == "vertical+horizontal" || value == "v+h")
+        return RuleMethod::VerticalHorizontal;
+    if (value == "random") return RuleMethod::Random;
+    if (value == "repeat") return RuleMethod::Repeat;
+    if (value == "ctm" || value == "glass") return RuleMethod::Ctm;
+
+    return std::nullopt;
+}
+
+std::optional<size_t> exactTileCount(RuleMethod method) {
+    switch (method) {
+    case RuleMethod::Fixed: return 1;
+    case RuleMethod::Horizontal: return 4;
+    case RuleMethod::Vertical: return 4;
+    case RuleMethod::HorizontalVertical: return 7;
+    case RuleMethod::VerticalHorizontal: return 7;
+    case RuleMethod::Ctm: return 47;
+    default: return std::nullopt;
+    }
 }
 
 std::optional<RuleDefinition> compileRule(
@@ -184,18 +345,25 @@ std::optional<RuleDefinition> compileRule(
     RuleDefinition rule;
     rule.sourcePath = path.string();
 
-    const std::string method =
-        lower(props.contains("method") ? props.at("method") : "ctm");
-    if (method != "horizontal" && method != "bookshelf") {
-        error = "unsupported method in current stage: " + method;
+    const auto method = parseMethod(
+        props.contains("method") ? props.at("method") : "ctm");
+    if (!method) {
+        error = "unsupported method";
         return std::nullopt;
     }
-    rule.method = RuleMethod::Horizontal;
+    rule.method = *method;
 
     if (const auto it = props.find("matchBlocks"); it != props.end()) {
         rule.matchBlocks = splitList(it->second);
-        for (auto& block : rule.matchBlocks) block = normalizeBlockName(std::move(block));
+        for (auto& block : rule.matchBlocks) {
+            if (hasUnsupportedStatePredicate(block)) {
+                error = "block-state predicates are not supported yet: " + block;
+                return std::nullopt;
+            }
+            block = normalizeBlockName(std::move(block));
+        }
     }
+
     if (const auto it = props.find("matchTiles"); it != props.end()) {
         rule.matchTiles = splitList(it->second);
     }
@@ -215,22 +383,40 @@ std::optional<RuleDefinition> compileRule(
         error = "missing tiles";
         return std::nullopt;
     }
+
     rule.tiles = parseTiles(tileIt->second);
-    if (rule.tiles.size() != 4) {
-        error = "horizontal method requires exactly 4 tiles, got "
-            + std::to_string(rule.tiles.size());
+    if (rule.tiles.empty()) {
+        error = "tiles resolved to an empty list";
         return std::nullopt;
     }
 
-    const std::string connect = lower(
-        props.contains("connect")
-            ? props.at("connect")
-            : (rule.matchBlocks.empty() ? "tile" : "block"));
-    if (connect != "block") {
-        error = "current horizontal stage supports connect=block only";
+    for (const auto& tile : rule.tiles) {
+        if (!tile.empty() && tile.front() == '<') {
+            error = "special tiles such as <skip>/<default> are not supported yet";
+            return std::nullopt;
+        }
+    }
+
+    if (const auto exact = exactTileCount(rule.method);
+        exact && rule.tiles.size() != *exact) {
+        error =
+            "method requires exactly " + std::to_string(*exact)
+            + " tiles, got " + std::to_string(rule.tiles.size());
         return std::nullopt;
     }
-    rule.connect = ConnectMode::Block;
+
+    if (requiresConnection(rule.method)) {
+        const std::string connect = lower(
+            props.contains("connect")
+                ? props.at("connect")
+                : (rule.matchBlocks.empty() ? "tile" : "block"));
+
+        if (connect != "block") {
+            error = "current connecting processors support connect=block only";
+            return std::nullopt;
+        }
+        rule.connect = ConnectMode::Block;
+    }
 
     bool facesValid = false;
     rule.faceMask = parseFaces(
@@ -243,20 +429,105 @@ std::optional<RuleDefinition> compileRule(
 
     rule.innerSeams = parseBool(props, "innerSeams", false);
 
-    const std::string orient =
-        lower(props.contains("orient") ? props.at("orient") : "none");
-    if (orient != "none") {
-        error = "current horizontal stage supports orient=none only";
+    if (requiresOrientationNone(rule.method)) {
+        const std::string orient =
+            lower(props.contains("orient") ? props.at("orient") : "none");
+        if (orient != "none") {
+            error = "current stage supports orient=none only";
+            return std::nullopt;
+        }
+    }
+
+    bool symmetryValid = false;
+    rule.symmetry = parseSymmetry(props, symmetryValid);
+    if (!symmetryValid) {
+        error = "invalid symmetry";
         return std::nullopt;
+    }
+
+    if (rule.method == RuleMethod::Random) {
+        if (const auto it = props.find("randomLoops"); it != props.end()) {
+            if (!parseInt(trim(it->second), rule.randomLoops)
+                || rule.randomLoops < 0
+                || rule.randomLoops > 9) {
+                error = "randomLoops must be between 0 and 9";
+                return std::nullopt;
+            }
+        }
+
+        rule.linked = parseBool(props, "linked", false);
+
+        if (const auto it = props.find("weights"); it != props.end()) {
+            bool weightsValid = false;
+            rule.weights = parseWeights(it->second, weightsValid);
+            if (!weightsValid
+                || !normalizeWeights(
+                    rule.weights,
+                    rule.tiles.size(),
+                    rule.weightSum)) {
+                error = "invalid random weights";
+                return std::nullopt;
+            }
+        }
+    }
+
+    if (rule.method == RuleMethod::Repeat) {
+        const auto widthIt = props.find("width");
+        const auto heightIt = props.find("height");
+
+        if (widthIt == props.end()
+            || !parseInt(trim(widthIt->second), rule.width)
+            || rule.width <= 0) {
+            error = "repeat requires positive width";
+            return std::nullopt;
+        }
+
+        if (heightIt == props.end()
+            || !parseInt(trim(heightIt->second), rule.height)
+            || rule.height <= 0) {
+            error = "repeat requires positive height";
+            return std::nullopt;
+        }
+
+        const uint64_t required =
+            static_cast<uint64_t>(rule.width)
+            * static_cast<uint64_t>(rule.height);
+
+        if (required != rule.tiles.size()) {
+            error =
+                "repeat requires width*height="
+                + std::to_string(required)
+                + " tiles, got "
+                + std::to_string(rule.tiles.size());
+            return std::nullopt;
+        }
     }
 
     return rule;
 }
 
+std::string methodName(RuleMethod method) {
+    switch (method) {
+    case RuleMethod::Fixed: return "fixed";
+    case RuleMethod::Horizontal: return "horizontal";
+    case RuleMethod::Vertical: return "vertical";
+    case RuleMethod::HorizontalVertical: return "horizontal+vertical";
+    case RuleMethod::VerticalHorizontal: return "vertical+horizontal";
+    case RuleMethod::Random: return "random";
+    case RuleMethod::Repeat: return "repeat";
+    case RuleMethod::Ctm: return "ctm";
+    }
+    return "?";
 }
 
-bool RuleEngine::load(const std::filesystem::path& rulesDir, LogFn log) {
+}
+
+bool RuleEngine::load(
+    const std::filesystem::path& rulesDir,
+    LogFn log
+) {
     mRules.clear();
+    ++mGeneration;
     mLog = std::move(log);
 
     std::error_code ec;
@@ -278,11 +549,17 @@ bool RuleEngine::load(const std::filesystem::path& rulesDir, LogFn log) {
     size_t skipped = 0;
     for (const auto& path : files) {
         const auto props = util::loadProperties(path);
+
         std::string error;
         auto definition = compileRule(path, props, error);
         if (!definition) {
             ++skipped;
-            if (mLog) mLog("Rule skipped: " + path.filename().string() + " (" + error + ")");
+            if (mLog) {
+                mLog(
+                    "Rule skipped: "
+                    + path.filename().string()
+                    + " (" + error + ")");
+            }
             continue;
         }
 
@@ -292,10 +569,16 @@ bool RuleEngine::load(const std::filesystem::path& rulesDir, LogFn log) {
     }
 
     if (mLog) {
+        std::string methods;
+        for (size_t i = 0; i < mRules.size(); ++i) {
+            if (i) methods += ",";
+            methods += methodName(mRules[i]->definition.method);
+        }
+
         mLog(
             "Rule compiler: loaded=" + std::to_string(mRules.size())
             + ", skipped=" + std::to_string(skipped)
-            + ", processor=horizontal/connect=block");
+            + ", methods=[" + methods + "]");
     }
 
     return !mRules.empty();
@@ -303,6 +586,7 @@ bool RuleEngine::load(const std::filesystem::path& rulesDir, LogFn log) {
 
 const void* RuleEngine::blockType(const void* block) {
     if (!block) return nullptr;
+
     return *reinterpret_cast<void* const*>(
         reinterpret_cast<uintptr_t>(block) + kBlockTypeOffset);
 }
@@ -318,7 +602,12 @@ std::string_view RuleEngine::blockFullName(const void* block) {
         + kHashedStringStringOffset;
 
     const auto* name = reinterpret_cast<const std::string*>(stringAddress);
-    if (name->size() == 0 || name->size() > 256 || name->data() == nullptr) return {};
+    if (name->size() == 0
+        || name->size() > 256
+        || name->data() == nullptr) {
+        return {};
+    }
+
     return {name->data(), name->size()};
 }
 
@@ -327,10 +616,31 @@ bool RuleEngine::blockRuleMatches(
     std::string_view fullName
 ) const {
     if (rule.definition.matchBlocks.empty()) return true;
+
     return std::any_of(
         rule.definition.matchBlocks.begin(),
         rule.definition.matchBlocks.end(),
-        [&](const std::string& value) { return value == fullName; });
+        [&](const std::string& value) {
+            return value == fullName;
+        });
+}
+
+std::vector<RuleEngine::RuntimeRule*> RuleEngine::resolveCandidates(
+    uintptr_t currentBlockType,
+    const void* block
+) const {
+    std::vector<RuntimeRule*> out;
+
+    const std::string_view fullName = blockFullName(block);
+    if (fullName.empty()) return out;
+
+    for (const auto& rule : mRules) {
+        if (blockRuleMatches(*rule, fullName)) {
+            out.push_back(rule.get());
+        }
+    }
+
+    return out;
 }
 
 bool RuleEngine::ensureAtlas(
@@ -341,19 +651,26 @@ bool RuleEngine::ensureAtlas(
     if (rule.atlasReady.load(std::memory_order_acquire)) return true;
     if (!getTextureUv) return false;
 
-    const uint64_t retryAt = rule.nextAtlasRetry.load(std::memory_order_relaxed);
-    if (hookCallCount < retryAt) return false;
+    if (hookCallCount < rule.nextAtlasRetry.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     std::scoped_lock lock(rule.atlasMutex);
+
     if (rule.atlasReady.load(std::memory_order_relaxed)) return true;
-    if (hookCallCount < rule.nextAtlasRetry.load(std::memory_order_relaxed)) return false;
+    if (hookCallCount < rule.nextAtlasRetry.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     std::vector<TextureUvSet> matchUvs;
     matchUvs.reserve(rule.definition.matchTiles.size());
+
     for (const auto& key : rule.definition.matchTiles) {
         auto uv = getTextureUv(key, 0, 0);
         if (!plausible(uv)) {
-            rule.nextAtlasRetry.store(hookCallCount + 4096, std::memory_order_relaxed);
+            rule.nextAtlasRetry.store(
+                hookCallCount + 4096,
+                std::memory_order_relaxed);
             return false;
         }
         matchUvs.emplace_back(std::move(uv));
@@ -361,10 +678,13 @@ bool RuleEngine::ensureAtlas(
 
     std::vector<TextureUvSet> tileUvs;
     tileUvs.reserve(rule.definition.tiles.size());
+
     for (const auto& key : rule.definition.tiles) {
         auto uv = getTextureUv(key, 0, 0);
         if (!plausible(uv)) {
-            rule.nextAtlasRetry.store(hookCallCount + 4096, std::memory_order_relaxed);
+            rule.nextAtlasRetry.store(
+                hookCallCount + 4096,
+                std::memory_order_relaxed);
             return false;
         }
         tileUvs.emplace_back(std::move(uv));
@@ -374,9 +694,12 @@ bool RuleEngine::ensureAtlas(
     rule.tileUvs = std::move(tileUvs);
     rule.atlasReady.store(true, std::memory_order_release);
 
-    if (!rule.loggedAtlasReady.exchange(true, std::memory_order_relaxed) && mLog) {
+    if (!rule.loggedAtlasReady.exchange(true, std::memory_order_relaxed)
+        && mLog) {
         mLog(
-            "Rule atlas ready: " + std::filesystem::path(rule.definition.sourcePath).filename().string()
+            "Rule atlas ready: "
+            + std::filesystem::path(rule.definition.sourcePath).filename().string()
+            + ", method=" + methodName(rule.definition.method)
             + ", sources=" + std::to_string(rule.matchTileUvs.size())
             + ", tiles=" + std::to_string(rule.tileUvs.size()));
     }
@@ -389,10 +712,13 @@ bool RuleEngine::sourceTileMatches(
     const TextureUvSet& original
 ) const {
     if (rule.definition.matchTiles.empty()) return true;
+
     return std::any_of(
         rule.matchTileUvs.begin(),
         rule.matchTileUvs.end(),
-        [&](const TextureUvSet& uv) { return sameUvRect(uv, original); });
+        [&](const TextureUvSet& uv) {
+            return sameUvRect(uv, original);
+        });
 }
 
 const TextureUvSet* RuleEngine::process(
@@ -405,72 +731,160 @@ const TextureUvSet* RuleEngine::process(
     GetTextureUvFn getTextureUv,
     uint64_t hookCallCount
 ) {
-    if (!block || !blockCache || !getBlock || face > 5 || mRules.empty()) {
+    if (!block
+        || face > 5
+        || mRules.empty()) {
         return &original;
     }
 
-    const uintptr_t currentType = reinterpret_cast<uintptr_t>(blockType(block));
+    const uintptr_t currentType =
+        reinterpret_cast<uintptr_t>(blockType(block));
     if (!currentType) return &original;
 
     struct ThreadCache {
         const RuleEngine* owner{};
-        uintptr_t blockType{};
-        std::vector<RuntimeRule*> candidates;
+        uint64_t generation{};
+        std::unordered_map<uintptr_t, std::vector<RuntimeRule*>> byType;
     };
     thread_local ThreadCache cache;
 
-    if (cache.owner != this || cache.blockType != currentType) {
+    if (cache.owner != this || cache.generation != mGeneration) {
         cache.owner = this;
-        cache.blockType = currentType;
-        cache.candidates.clear();
-
-        const std::string_view fullName = blockFullName(block);
-        if (fullName.empty()) return &original;
-
-        for (const auto& rule : mRules) {
-            if (blockRuleMatches(*rule, fullName)) {
-                cache.candidates.push_back(rule.get());
-            }
-        }
+        cache.generation = mGeneration;
+        cache.byType.clear();
     }
 
-    if (cache.candidates.empty()) return &original;
+    auto it = cache.byType.find(currentType);
+    if (it == cache.byType.end()) {
+        it = cache.byType.emplace(
+            currentType,
+            resolveCandidates(currentType, block)).first;
+    }
 
-    for (RuntimeRule* rule : cache.candidates) {
+    const auto& candidates = it->second;
+    if (candidates.empty()) return &original;
+
+    for (RuntimeRule* rule : candidates) {
         if ((rule->definition.faceMask & (1u << face)) == 0) continue;
         if (!ensureAtlas(*rule, getTextureUv, hookCallCount)) continue;
         if (!sourceTileMatches(*rule, original)) continue;
 
-        if (rule->definition.method == RuleMethod::Horizontal) {
-            const auto directions = ctm::directionsForFace(face);
+        size_t tile = 0;
+
+        switch (rule->definition.method) {
+        case RuleMethod::Fixed:
+            tile = 0;
+            break;
+
+        case RuleMethod::Horizontal: {
+            if (!blockCache || !getBlock) continue;
+            const auto d = ctm::directionsForFace(face);
+
             const BlockPos left{
-                pos.x + directions[0].x,
-                pos.y + directions[0].y,
-                pos.z + directions[0].z
+                pos.x + d[0].x,
+                pos.y + d[0].y,
+                pos.z + d[0].z
             };
             const BlockPos right{
-                pos.x + directions[2].x,
-                pos.y + directions[2].y,
-                pos.z + directions[2].z
+                pos.x + d[2].x,
+                pos.y + d[2].y,
+                pos.z + d[2].z
             };
 
-            const auto connected = [&](const BlockPos& neighborPos) {
-                const void* neighbor = getBlock(blockCache, &neighborPos);
+            const auto connected = [&](const BlockPos& p) {
+                const void* neighbor = getBlock(blockCache, &p);
                 return neighbor
-                    && reinterpret_cast<uintptr_t>(blockType(neighbor)) == currentType;
+                    && reinterpret_cast<uintptr_t>(blockType(neighbor))
+                        == currentType;
             };
 
-            const uint8_t tile = ctm::horizontalTile(connected(left), connected(right));
-            if (tile >= rule->tileUvs.size()) continue;
-
-            if (!rule->loggedApplied.exchange(true, std::memory_order_relaxed) && mLog) {
-                mLog(
-                    "Rule applied: "
-                    + std::filesystem::path(rule->definition.sourcePath).filename().string());
-            }
-
-            return &rule->tileUvs[tile];
+            tile = ctm::horizontalTile(
+                connected(left),
+                connected(right));
+            break;
         }
+
+        case RuleMethod::Vertical:
+            if (!blockCache || !getBlock) continue;
+            tile = processor::verticalTile(
+                pos,
+                face,
+                blockCache,
+                currentType,
+                getBlock,
+                &RuleEngine::blockType);
+            break;
+
+        case RuleMethod::HorizontalVertical:
+            if (!blockCache || !getBlock) continue;
+            tile = processor::horizontalVerticalTile(
+                pos,
+                face,
+                blockCache,
+                currentType,
+                getBlock,
+                &RuleEngine::blockType);
+            break;
+
+        case RuleMethod::VerticalHorizontal:
+            if (!blockCache || !getBlock) continue;
+            tile = processor::verticalHorizontalTile(
+                pos,
+                face,
+                blockCache,
+                currentType,
+                getBlock,
+                &RuleEngine::blockType);
+            break;
+
+        case RuleMethod::Random:
+            tile = processor::randomTile(
+                pos,
+                face,
+                rule->tileUvs.size(),
+                rule->definition.weights,
+                rule->definition.weightSum,
+                rule->definition.randomLoops,
+                rule->definition.symmetry,
+                rule->definition.linked,
+                blockCache,
+                currentType,
+                getBlock,
+                &RuleEngine::blockType);
+            break;
+
+        case RuleMethod::Repeat:
+            tile = processor::repeatTile(
+                pos,
+                face,
+                rule->definition.width,
+                rule->definition.height,
+                rule->definition.symmetry);
+            break;
+
+        case RuleMethod::Ctm:
+            if (!blockCache || !getBlock) continue;
+            tile = processor::ctmTile(
+                pos,
+                face,
+                blockCache,
+                currentType,
+                getBlock,
+                &RuleEngine::blockType);
+            break;
+        }
+
+        if (tile >= rule->tileUvs.size()) continue;
+
+        if (!rule->loggedApplied.exchange(true, std::memory_order_relaxed)
+            && mLog) {
+            mLog(
+                "Rule applied: "
+                + std::filesystem::path(rule->definition.sourcePath).filename().string()
+                + ", method=" + methodName(rule->definition.method));
+        }
+
+        return &rule->tileUvs[tile];
     }
 
     return &original;

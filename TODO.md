@@ -1,48 +1,42 @@
 # Roadmap
 
-## Done
-- Validate legacy BlockTessellator hook on 1.26.52.3.
-- Validate cached neighbor lookup.
-- Validate custom terrain-atlas UV replacement.
-- Validate Continuity horizontal 4-tile mapping with bookshelf.
-- Remove the expensive useNewTessellation diagnostic hook.
-- Exclude connected glass for BedrockTools compatibility.
-- Replace hardcoded bookshelf renderer logic with a compiled .properties rule engine.
+## Completed
+- Legacy BlockTessellator renderer path validated on-device.
+- Cached neighbour lookup validated.
+- Bedrock terrain-atlas UV replacement validated.
+- .properties scanner and compiled rule engine validated.
+- BlockType candidate cache added.
+- Connected glass excluded for BedrockTools compatibility.
+- Heavy useNewTessellation diagnostic removed from hot path.
+- method=horizontal validated visually.
+- Added processors for:
+  - fixed
+  - vertical
+  - horizontal+vertical / h+v
+  - vertical+horizontal / v+h
+  - random
+  - repeat
+  - generic 47-tile CTM for non-glass targets
 
-## Current supported rule subset
-- method=horizontal / bookshelf
-- connect=block
-- matchBlocks
-- matchTiles
-- tiles with compact numeric ranges such as 0-3 or prefix_0-3
-- faces
-- innerSeams parsed
-- orient=none
-
-## Next processors
-- method=vertical
-- method=fixed
-- method=top
-- method=random
-- method=repeat
-- generic method=ctm (47 tiles, non-glass)
-- horizontal+vertical / vertical+horizontal
-
-## Rule compatibility
+## Next compatibility work
+- Add controlled test rules/assets for each new processor.
 - connect=state
 - connect=tile
-- block state predicates
+- block-state predicates
+- top with correct AXIS handling
+- orient=state_axis
+- orient=texture
 - resourceCondition
+- prioritize / pack ordering
 - heights / biomes
-- prioritize and deterministic ordering parity
-- orientation=state_axis / texture
+- <skip> / <default>
 - multipass
 
 ## Later renderer work
-- compact CTM geometry splitting
-- overlay extra-quad path
-- emissive extra material/lighting path
-- new ClientBlockPipeline support only where required
+- compact CTM: geometry splitting / extra faces
+- overlay: extra-quad path
+- emissive: second material/quad and lighting
+- ClientBlockPipeline support where legacy fallback is unavailable
 
 ## Explicit non-goal
 - Do not implement connected glass or glass-pane rendering while BedrockTools provides that module.

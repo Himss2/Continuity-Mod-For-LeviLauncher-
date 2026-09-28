@@ -30,7 +30,7 @@ template <> struct pl::config::Schema<continuity_bedrock::ModConfig> {
         if (name == "enableBookshelfPoc")
             return {
                 .title = "Compiled rule engine",
-                .description = "Enable the current generic compiled-rule runtime (currently method=horizontal/connect=block)."
+                .description = "Enable the compiled Continuity rule engine."
             };
         if (name == "diagnostics")
             return {
