@@ -103,6 +103,10 @@ Besides bookshelf, the bundled resource pack now includes Continuity's default v
 
 These rules use `matchBlocks` + `faces=sides` + `connect=block`. They intentionally do not depend on Bedrock's vanilla atlas key naming, which can differ from Java/OptiFine naming.
 
+### Bedrock sandstone end-cap correction
+
+Bedrock's rendering makes the left outer edge of Continuity's default cut/chiseled sandstone tiles much less visible than the right edge. Version **0.4.1-re-poc** applies a resource-only correction to tiles `0` and `3` for cut/chiseled sandstone and their red variants so the retained left end-cap is visually balanced with the right end-cap. The connection algorithm, direction mapping and internal-edge tiles are unchanged.
+
 ## Cross-block continuity
 
 Version **0.4.0-re-poc** adds the first true cross-BlockType connection path:
