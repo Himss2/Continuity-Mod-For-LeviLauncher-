@@ -36,7 +36,7 @@ jobs:
       - name: Upload LeviPack
         uses: actions/upload-artifact@v4
         with:
-          name: continuity-bedrock
+          name: better-grass
           path: build-*/*.levipack
           if-no-files-found: error
 
