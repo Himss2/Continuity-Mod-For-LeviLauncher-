@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/LegacyCtmHook.h"
+#include "engine/PlankOverlayHook.h"
 #include "engine/RuleEngine.h"
 #include "mod/Config.h"
 
@@ -40,6 +41,7 @@ private:
     engine::Addresses mAddresses{};
     engine::RuleEngine mRules;
     engine::LegacyCtmHook mHook;
+    engine::PlankOverlayHook mPlankOverlay;
 
     bool mMenuRegistered{};
 };

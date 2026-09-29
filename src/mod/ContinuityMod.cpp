@@ -68,10 +68,15 @@ bool ContinuityMod::enable() {
     mAddresses = engine::resolveAddresses();
 
     log.info(
-        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}",
+        "RE 1.26.52.3: _getTexture={:#x}, cacheGetBlock={:#x}, atlasUv={:#x}, "
+        "faces=[N:{:#x},S:{:#x},W:{:#x},E:{:#x}]",
         mAddresses.blockTessellatorGetTexture,
         mAddresses.blockTessellatorCacheGetBlock,
-        mAddresses.blockGraphicsGetTextureUv);
+        mAddresses.blockGraphicsGetTextureUv,
+        mAddresses.tessellateFaceNorth,
+        mAddresses.tessellateFaceSouth,
+        mAddresses.tessellateFaceWest,
+        mAddresses.tessellateFaceEast);
 
     if (!engine::coreAddressesReady(mAddresses)) {
         log.error("Core renderer signatures did not resolve. Hooks are NOT installed.");
@@ -91,14 +96,28 @@ bool ContinuityMod::enable() {
         return true;
     }
 
+    const bool overlayOk = mPlankOverlay.install(
+        mAddresses,
+        &mHook,
+        mHook.ruleEngineEnabled(),
+        [&](const std::string& message) {
+            getSelf().getLogger().info("{}", message);
+        });
+
+    if (!overlayOk) {
+        log.warn(
+            "Plank overlay POC hooks are unavailable; base Continuity rules remain active");
+    }
+
     if (!registerModMenu()) {
         log.warn("Failed to register Continuity in Levi Mod Menu");
     }
 
     log.info(
-        "Generic rule hook active; rules={}, ruleEngine={}, modMenu={}",
+        "Generic rule hook active; rules={}, ruleEngine={}, plankOverlayPOC={}, modMenu={}",
         mRules.ruleCount(),
         mHook.ruleEngineEnabled(),
+        overlayOk,
         mMenuRegistered);
 
     return true;
@@ -113,6 +132,7 @@ bool ContinuityMod::disable() {
         stats.getTextureCalls,
         stats.replacedFaces);
 
+    mPlankOverlay.uninstall();
     mHook.uninstall();
     return true;
 }
@@ -134,7 +154,7 @@ bool ContinuityMod::registerModMenu() {
             "Continuity Connected Textures")
             .modId(getSelf().getId())
             .description(
-                "Toggle Continuity connected-texture rules at runtime. "
+                "Toggle Continuity connected-texture rules and the plank overlay POC. "
                 "Glass remains delegated to BedrockTools.")
             .defaultEnabled(mHook.ruleEngineEnabled())
             .hideInHudEditor(true)
@@ -171,6 +191,7 @@ void ContinuityMod::handleModMenuToggle(
     if (moduleId != kModuleId) return;
 
     mHook.setRuleEngineEnabled(enabled);
+    mPlankOverlay.setEnabled(enabled);
     persistRuleEngineEnabled(enabled);
 
     getSelf().getLogger().info(
