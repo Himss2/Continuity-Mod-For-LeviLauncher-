@@ -1,44 +1,32 @@
 # Roadmap
 
 ## Completed
-- Levi Mod Menu runtime toggle with persisted state and visible-chunk rebuild.
-- Legacy BlockTessellator renderer path validated on-device.
-- Cached neighbour lookup validated.
-- Bedrock terrain-atlas UV replacement validated.
-- .properties scanner and compiled rule engine validated.
-- BlockType candidate cache added.
-- Connected glass excluded for BedrockTools compatibility.
-- Heavy useNewTessellation diagnostic removed from hot path.
-- method=horizontal validated visually.
-- Added processors for:
-  - fixed
-  - vertical
-  - horizontal+vertical / h+v
-  - vertical+horizontal / v+h
-  - random
-  - repeat
-  - generic 47-tile CTM for non-glass targets
 
-## Next compatibility work
-- Add controlled test rules/assets for each new processor.
-- connect=state
-- connect=tile for method=top ✅
-- connect=tile for horizontal/vertical/h+v/v+h/ctm
-- block-state predicates
-- top with correct AXIS handling
-- orient=state_axis
-- orient=texture
-- resourceCondition
-- prioritize / pack ordering
-- heights / biomes
-- <skip> / <default>
-- multipass
+- [x] Fancy diagonal-down grass connection
+- [x] Grass-block-only fast rejection
+- [x] Native BlockTessellator texture hook
+- [x] Native BlockTessellatorCache neighbor lookup
+- [x] Resolve replacement from Minecraft's live UP face
+- [x] No bundled grass PNG / no terrain atlas override
+- [x] Levi Mod Menu runtime toggle
+- [x] Typed config
+- [x] Minecraft 1.26.52.3 arm64 signatures
 
-## Later renderer work
-- compact CTM: geometry splitting / extra faces
-- overlay: extra-quad path
-- emissive: second material/quad and lighting
-- ClientBlockPipeline support where legacy fallback is unavailable
+## Next
 
-## Explicit non-goal
-- Do not implement connected glass or glass-pane rendering while BedrockTools provides that module.
+- [ ] Validate vanilla texture on device
+- [ ] Validate custom resource-pack texture on device
+- [ ] Validate biome tint in every horizontal direction
+- [ ] Snow-covered grass
+- [ ] Mycelium
+- [ ] Podzol
+- [ ] Dirt path
+- [ ] Crimson / warped nylium
+- [ ] New ClientBlockPipeline fallback only if required
+
+## Non-goals for first release
+
+- No custom grass PNGs
+- No gameplay grass-spread changes
+- No forced chunk rebuild traversal
+- No Continuity CTM or overlay renderer
