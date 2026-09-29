@@ -2,6 +2,8 @@
 
 #include <pl/memory/Hook.hpp>
 
+#include <utility>
+
 namespace better_grass::engine {
 
 BetterGrassHook* BetterGrassHook::sInstance = nullptr;
