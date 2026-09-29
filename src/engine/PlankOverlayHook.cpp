@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <pl/memory/Hook.hpp>
 #include <utility>
 
@@ -24,13 +25,17 @@ constexpr std::ptrdiff_t kBlockTypeNameInfoOffset = 0x88;
 constexpr std::ptrdiff_t kNameInfoFullNameOffset = 0x40;
 constexpr std::ptrdiff_t kHashedStringStringOffset = 0x8;
 
-// 1/256 block is still visually flush, but is far enough from the vanilla
-// face to avoid mobile depth-buffer flicker while the camera moves.
-constexpr float kFaceEpsilon = 1.0f / 256.0f;
+constexpr std::ptrdiff_t kTextureU0 = 0x4;
+constexpr std::ptrdiff_t kTextureV0 = 0x8;
+constexpr std::ptrdiff_t kTextureU1 = 0xC;
+constexpr std::ptrdiff_t kTextureV1 = 0x10;
+constexpr std::ptrdiff_t kTextureIsotropic = 0x50;
+constexpr std::size_t kTextureUvSize = 0x58;
+constexpr std::size_t kTextureUvAlignment = 0x8;
 
 // Four 4-pixel-high teeth. Single-sided overlays may reach farther into the
 // target, while dual-sided overlays are clamped below half width so the two
-// vanilla textures can never overlap and z-fight with each other.
+// source textures never overlap.
 constexpr std::array<float, 4> kDepth = {
     8.0f / 16.0f,
     5.0f / 16.0f,
@@ -47,6 +52,7 @@ constexpr std::array<float, 5> kBand = {
 };
 
 constexpr float kDualSideMaxDepth = 7.0f / 16.0f;
+constexpr float kMinRegionWidth = 1.0f / 1024.0f;
 
 constexpr uint8_t kClassPlank = 1u << 0;
 constexpr uint8_t kClassGlass = 1u << 1;
@@ -70,6 +76,12 @@ struct HorizontalNeighborCache {
 
 thread_local HorizontalNeighborCache gHorizontalCache{};
 
+template <typename T>
+T& field(void* base, std::ptrdiff_t offset) {
+    return *reinterpret_cast<T*>(
+        reinterpret_cast<std::uintptr_t>(base) + offset);
+}
+
 bool samePos(const BlockPos& a, const BlockPos& b) {
     return a.x == b.x && a.y == b.y && a.z == b.z;
 }
@@ -85,6 +97,80 @@ size_t horizontalIndex(int dx, int dz) {
     return 3;
 }
 
+class TextureClone final {
+public:
+    using CopyCtorFn = void* (*)(void*, const void*);
+    using DtorFn = void (*)(void*);
+
+    TextureClone(
+        const void* source,
+        CopyCtorFn copyCtor,
+        DtorFn dtor
+    )
+        : mDtor(dtor) {
+        if (!source || !copyCtor || !dtor) return;
+
+        copyCtor(mStorage.data(), source);
+        mConstructed = true;
+
+        mU0 = field<float>(mStorage.data(), kTextureU0);
+        mV0 = field<float>(mStorage.data(), kTextureV0);
+        mU1 = field<float>(mStorage.data(), kTextureU1);
+        mV1 = field<float>(mStorage.data(), kTextureV1);
+    }
+
+    ~TextureClone() {
+        if (mConstructed && mDtor) {
+            mDtor(mStorage.data());
+        }
+    }
+
+    TextureClone(const TextureClone&) = delete;
+    TextureClone& operator=(const TextureClone&) = delete;
+    TextureClone(TextureClone&&) = delete;
+    TextureClone& operator=(TextureClone&&) = delete;
+
+    bool valid() const {
+        return mConstructed;
+    }
+
+    TextureUvSet* setRect(
+        float u0,
+        float u1,
+        float v0,
+        float v1
+    ) {
+        if (!mConstructed) return nullptr;
+
+        u0 = std::clamp(u0, 0.0f, 1.0f);
+        u1 = std::clamp(u1, 0.0f, 1.0f);
+        v0 = std::clamp(v0, 0.0f, 1.0f);
+        v1 = std::clamp(v1, 0.0f, 1.0f);
+
+        field<float>(mStorage.data(), kTextureU0) = lerp(mU0, mU1, u0);
+        field<float>(mStorage.data(), kTextureU1) = lerp(mU0, mU1, u1);
+        field<float>(mStorage.data(), kTextureV0) = lerp(mV0, mV1, v0);
+        field<float>(mStorage.data(), kTextureV1) = lerp(mV0, mV1, v1);
+
+        // Partial UV rectangles must not be randomly rotated by isotropic-face
+        // handling. BedrockTools applies the same rule to cropped glass UVs.
+        field<uint8_t>(mStorage.data(), kTextureIsotropic) = 0;
+
+        return reinterpret_cast<TextureUvSet*>(mStorage.data());
+    }
+
+private:
+    alignas(kTextureUvAlignment)
+        std::array<std::byte, kTextureUvSize> mStorage{};
+
+    DtorFn mDtor{};
+    bool mConstructed{};
+    float mU0{};
+    float mV0{};
+    float mU1{};
+    float mV1{};
+};
+
 }
 
 bool PlankOverlayHook::install(
@@ -99,13 +185,23 @@ bool PlankOverlayHook::install(
     mTextureHook = textureHook;
     mGetBlock =
         reinterpret_cast<CacheGetBlockFn>(addresses.blockTessellatorCacheGetBlock);
+    mTextureCopyCtor =
+        reinterpret_cast<TextureUvCopyCtorFn>(addresses.textureUvCopyCtor);
+    mTextureDtor =
+        reinterpret_cast<TextureUvDtorFn>(addresses.textureUvDtor);
+
     mLog = std::move(log);
     mEnabled.store(enabled, std::memory_order_relaxed);
     mLoggedFirstOverlay.store(false, std::memory_order_relaxed);
 
-    if (!mTextureHook || !mGetBlock) {
+    if (!mTextureHook
+        || !mGetBlock
+        || !mTextureCopyCtor
+        || !mTextureDtor) {
         if (mLog) {
-            mLog("Plank overlay POC unavailable: renderer dependencies missing");
+            mLog(
+                "Plank overlay POC unavailable: texture lifecycle or renderer "
+                "dependencies did not resolve");
         }
         return false;
     }
@@ -143,12 +239,12 @@ bool PlankOverlayHook::install(
 
     if (mLog) {
         mLog(
-            "Plank overlay POC side-face hooks: north="
+            "Plank overlay POC hooks: north="
             + std::string(mFaces[0].installed ? "ok" : "fail")
             + ", south=" + (mFaces[1].installed ? "ok" : "fail")
             + ", west=" + (mFaces[2].installed ? "ok" : "fail")
             + ", east=" + (mFaces[3].installed ? "ok" : "fail")
-            + "; horizontal-only, no top/bottom transitions");
+            + "; coplanar non-overlap renderer=true; safeUvCopy=true");
     }
 
     if (!any && sInstance == this) {
@@ -180,6 +276,8 @@ void PlankOverlayHook::uninstall() {
 
     mTextureHook = nullptr;
     mGetBlock = nullptr;
+    mTextureCopyCtor = nullptr;
+    mTextureDtor = nullptr;
 
     if (sInstance == this) {
         sInstance = nullptr;
@@ -238,8 +336,14 @@ void PlankOverlayHook::onFace(
     FaceFn original = index < mFaces.size() ? mFaces[index].original : nullptr;
     if (!original) return;
 
-    // Preserve the vanilla/base face first.
-    original(blockTessellator, tessellator, block, position, inputTexture);
+    const auto vanilla = [&]() {
+        original(
+            blockTessellator,
+            tessellator,
+            block,
+            position,
+            inputTexture);
+    };
 
     if (!mEnabled.load(std::memory_order_relaxed)
         || !blockTessellator
@@ -248,7 +352,10 @@ void PlankOverlayHook::onFace(
         || !position
         || !inputTexture
         || isPlank(block)
-        || isGlassLike(block)) {
+        || isGlassLike(block)
+        || !mTextureCopyCtor
+        || !mTextureDtor) {
+        vanilla();
         return;
     }
 
@@ -257,7 +364,10 @@ void PlankOverlayHook::onFace(
         + kCurrentShapeAabbOffset);
 
     const AabbRaw originalShape = *shape;
-    if (!isFullCube(originalShape)) return;
+    if (!isFullCube(originalShape)) {
+        vanilla();
+        return;
+    }
 
     const BlockPos targetPos{
         static_cast<int32_t>(std::floor(position->x)),
@@ -269,9 +379,6 @@ void PlankOverlayHook::onFace(
         reinterpret_cast<uintptr_t>(blockTessellator)
         + kBlockTessellatorCacheOffset);
 
-    // Plank Simple Overlays are horizontal. Only texture-left and
-    // texture-right can source a transition; local down/up are intentionally
-    // ignored. This also halves the hot-path neighbor work.
     const void* leftSource = horizontalNeighbor(
         blockCache,
         blockTessellator,
@@ -288,7 +395,7 @@ void PlankOverlayHook::onFace(
         face,
         2);
 
-    const bool leftActive =
+    bool leftActive =
         leftSource
         && isPlank(leftSource)
         && !sourceSurroundedOnFourSides(
@@ -296,7 +403,7 @@ void PlankOverlayHook::onFace(
             neighborPos(targetPos, face, 0),
             face);
 
-    const bool rightActive =
+    bool rightActive =
         rightSource
         && isPlank(rightSource)
         && !sourceSurroundedOnFourSides(
@@ -304,133 +411,95 @@ void PlankOverlayHook::onFace(
             neighborPos(targetPos, face, 2),
             face);
 
-    const bool dualSided = leftActive && rightActive;
+    if (!leftActive && !rightActive) {
+        vanilla();
+        return;
+    }
+
+    TextureClone baseTexture(
+        inputTexture,
+        mTextureCopyCtor,
+        mTextureDtor);
+
+    if (!baseTexture.valid()) {
+        vanilla();
+        return;
+    }
+
+    std::optional<TextureClone> leftTexture;
+    std::optional<TextureClone> rightTexture;
+
+    BlockPos leftPos{};
+    BlockPos rightPos{};
 
     if (leftActive) {
-        emitNeighborOverlay(
+        leftPos = neighborPos(targetPos, face, 0);
+        const TextureUvSet* source = mTextureHook->queryOriginalTexture(
+            blockTessellator,
+            &leftPos,
+            leftSource,
             face,
             0,
-            dualSided,
-            blockTessellator,
-            tessellator,
-            block,
-            leftSource,
-            neighborPos(targetPos, face, 0),
-            *position,
-            originalShape);
+            nullptr);
+
+        if (source) {
+            leftTexture.emplace(
+                source,
+                mTextureCopyCtor,
+                mTextureDtor);
+        }
+
+        leftActive = leftTexture && leftTexture->valid();
     }
 
     if (rightActive) {
-        emitNeighborOverlay(
-            face,
-            2,
-            dualSided,
+        rightPos = neighborPos(targetPos, face, 2);
+        const TextureUvSet* source = mTextureHook->queryOriginalTexture(
             blockTessellator,
-            tessellator,
-            block,
+            &rightPos,
             rightSource,
-            neighborPos(targetPos, face, 2),
-            *position,
-            originalShape);
-    }
+            face,
+            0,
+            nullptr);
 
-    *shape = originalShape;
-}
-
-bool PlankOverlayHook::emitNeighborOverlay(
-    uint8_t face,
-    uint8_t localEdge,
-    bool dualSided,
-    void* blockTessellator,
-    void* tessellator,
-    const void* targetBlock,
-    const void* sourceBlock,
-    const BlockPos& sourcePos,
-    const Vec3Raw& renderPos,
-    const AabbRaw& originalShape
-) {
-    if (!sourceBlock || !isPlank(sourceBlock)) return false;
-
-    // Do NOT require the block in front of the source plank to be air.
-    // The target face hook only runs when Bedrock actually tessellates that
-    // visible target face, so occlusion is already handled by the engine.
-    const TextureUvSet* sourceTexture = mTextureHook->queryOriginalTexture(
-        blockTessellator,
-        &sourcePos,
-        sourceBlock,
-        face,
-        0,
-        nullptr);
-
-    if (!sourceTexture) return false;
-
-    const size_t index = static_cast<size_t>(face - 2);
-    FaceFn original = mFaces[index].original;
-    if (!original) return false;
-
-    emitJaggedEdge(
-        face,
-        localEdge,
-        dualSided,
-        original,
-        blockTessellator,
-        tessellator,
-        targetBlock,
-        renderPos,
-        *sourceTexture,
-        originalShape);
-
-    if (!mLoggedFirstOverlay.exchange(true, std::memory_order_relaxed)
-        && mLog) {
-        mLog(
-            "PLANK OVERLAY HIT: target="
-            + std::string(blockFullName(targetBlock))
-            + ", source=" + std::string(blockFullName(sourceBlock))
-            + ", face=" + std::to_string(face)
-            + ", edge=" + std::to_string(localEdge)
-            + ", dual=" + (dualSided ? "true" : "false"));
-    }
-
-    return true;
-}
-
-void PlankOverlayHook::emitJaggedEdge(
-    uint8_t face,
-    uint8_t localEdge,
-    bool dualSided,
-    FaceFn original,
-    void* blockTessellator,
-    void* tessellator,
-    const void* targetBlock,
-    const Vec3Raw& renderPos,
-    const TextureUvSet& sourceTexture,
-    const AabbRaw& originalShape
-) {
-    auto* shape = reinterpret_cast<AabbRaw*>(
-        reinterpret_cast<uintptr_t>(blockTessellator)
-        + kCurrentShapeAabbOffset);
-
-    for (size_t band = 0; band < 4; ++band) {
-        float depth = kDepth[band];
-        if (dualSided) {
-            depth = std::min(depth, kDualSideMaxDepth);
+        if (source) {
+            rightTexture.emplace(
+                source,
+                mTextureCopyCtor,
+                mTextureDtor);
         }
 
-        float u0;
-        float u1;
+        rightActive = rightTexture && rightTexture->valid();
+    }
 
-        if (localEdge == 0) {
-            u0 = 0.0f;
-            u1 = depth;
-        } else {
-            u0 = 1.0f - depth;
-            u1 = 1.0f;
+    if (!leftActive && !rightActive) {
+        vanilla();
+        return;
+    }
+
+    const bool dualSided = leftActive && rightActive;
+
+    const auto renderRegion = [&](
+        TextureClone& texture,
+        float u0,
+        float u1,
+        float v0,
+        float v1
+    ) {
+        if (u1 - u0 <= kMinRegionWidth
+            || v1 - v0 <= kMinRegionWidth) {
+            return;
         }
 
-        const float v0 = kBand[band];
-        const float v1 = kBand[band + 1];
+        TextureUvSet* cropped = texture.setRect(
+            u0,
+            u1,
+            v0,
+            v1);
 
-        AabbRaw strip = makeStrip(
+        if (!cropped) return;
+
+        *shape = makeRegion(
             originalShape,
             face,
             u0,
@@ -438,18 +507,77 @@ void PlankOverlayHook::emitJaggedEdge(
             v0,
             v1);
 
-        offsetFace(strip, face, kFaceEpsilon);
-        *shape = strip;
-
         original(
             blockTessellator,
             tessellator,
-            targetBlock,
-            &renderPos,
-            &sourceTexture);
+            block,
+            position,
+            cropped);
+    };
+
+    // No face is drawn twice. Each 4px-high band is partitioned into:
+    // [left plank] [original target] [right plank].
+    // All three regions stay on the exact vanilla face plane, so there is
+    // neither depth fighting nor a visible side extrusion.
+    for (size_t band = 0; band < 4; ++band) {
+        float leftDepth = leftActive ? kDepth[band] : 0.0f;
+        float rightDepth = rightActive ? kDepth[band] : 0.0f;
+
+        if (dualSided) {
+            leftDepth = std::min(leftDepth, kDualSideMaxDepth);
+            rightDepth = std::min(rightDepth, kDualSideMaxDepth);
+        }
+
+        const float v0 = kBand[band];
+        const float v1 = kBand[band + 1];
+
+        if (leftActive) {
+            renderRegion(
+                *leftTexture,
+                0.0f,
+                leftDepth,
+                v0,
+                v1);
+        }
+
+        const float centerStart = leftDepth;
+        const float centerEnd = 1.0f - rightDepth;
+
+        if (centerEnd > centerStart + kMinRegionWidth) {
+            renderRegion(
+                baseTexture,
+                centerStart,
+                centerEnd,
+                v0,
+                v1);
+        }
+
+        if (rightActive) {
+            renderRegion(
+                *rightTexture,
+                1.0f - rightDepth,
+                1.0f,
+                v0,
+                v1);
+        }
     }
 
     *shape = originalShape;
+
+    if (!mLoggedFirstOverlay.exchange(true, std::memory_order_relaxed)
+        && mLog) {
+        mLog(
+            "PLANK OVERLAY HIT: target="
+            + std::string(blockFullName(block))
+            + ", left=" + (leftActive
+                ? std::string(blockFullName(leftSource))
+                : "none")
+            + ", right=" + (rightActive
+                ? std::string(blockFullName(rightSource))
+                : "none")
+            + ", face=" + std::to_string(face)
+            + ", coplanarSplit=true");
+    }
 }
 
 bool PlankOverlayHook::sourceSurroundedOnFourSides(
@@ -470,9 +598,8 @@ bool PlankOverlayHook::sourceSurroundedOnFourSides(
 
         const void* neighbor = mGetBlock(blockCache, &p);
 
-        // The special suppression is only for a plank boxed by four
-        // NON-plank blocks. A neighboring plank means this is part of a plank
-        // row/wall and horizontal transitions must remain available.
+        // Suppress only a plank boxed by four NON-plank blocks.
+        // A neighboring plank means it is part of a plank row/wall.
         if (!neighbor || isAirLike(neighbor) || isPlank(neighbor)) {
             return false;
         }
@@ -627,7 +754,7 @@ BlockPos PlankOverlayHook::neighborPos(
     };
 }
 
-PlankOverlayHook::AabbRaw PlankOverlayHook::makeStrip(
+PlankOverlayHook::AabbRaw PlankOverlayHook::makeRegion(
     const AabbRaw& original,
     uint8_t face,
     float u0,
@@ -642,7 +769,6 @@ PlankOverlayHook::AabbRaw PlankOverlayHook::makeStrip(
     v0 = std::clamp(v0, 0.0f, 1.0f);
     v1 = std::clamp(v1, 0.0f, 1.0f);
 
-    // v=0 is local down; v=1 is local up.
     out.minY = lerp(original.minY, original.maxY, v0);
     out.maxY = lerp(original.minY, original.maxY, v1);
 
@@ -672,29 +798,6 @@ PlankOverlayHook::AabbRaw PlankOverlayHook::makeStrip(
     }
 
     return out;
-}
-
-void PlankOverlayHook::offsetFace(
-    AabbRaw& shape,
-    uint8_t face,
-    float epsilon
-) {
-    switch (face) {
-    case 2:
-        shape.minZ -= epsilon;
-        break;
-    case 3:
-        shape.maxZ += epsilon;
-        break;
-    case 4:
-        shape.minX -= epsilon;
-        break;
-    case 5:
-        shape.maxX += epsilon;
-        break;
-    default:
-        break;
-    }
 }
 
 }
