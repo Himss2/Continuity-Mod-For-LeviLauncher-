@@ -21,8 +21,6 @@ const TextureUvSet* BetterGrassResolver::process(
     const BlockPos& pos,
     const void* block,
     uint8_t face,
-    int forcedVariant,
-    const void* graphics,
     const TextureUvSet* original,
     CacheGetBlockFn getBlock,
     GetTextureFn getTexture
@@ -52,16 +50,19 @@ const TextureUvSet* BetterGrassResolver::process(
         return original;
     }
 
-    // Ask Minecraft itself for this block's UP-face texture. This keeps the
-    // result tied to the currently active terrain atlas/resource pack instead
-    // of hardcoding a grass texture or atlas UV.
+    // Resolve the UP face from the block itself, not from the side-face
+    // rendering context. In 1.26.52.3, nullptr graphics makes _getTexture
+    // resolve BlockGraphics from `block`, and forcedVariant=-1 makes it
+    // resolve the native state/variant. This preserves the active vanilla or
+    // resource-pack grass_top mapping without bundling or hardcoding atlas UVs.
     const TextureUvSet* topTexture = getTexture(
         blockTessellator,
         &pos,
         block,
-        1,
-        forcedVariant,
-        graphics);
+        1,      // UP
+        -1,     // native block/state variant
+        nullptr // native BlockGraphics lookup
+    );
 
     return topTexture ? topTexture : original;
 }
