@@ -1,7 +1,5 @@
 {
-  "version": 4,
+  "version": 1,
   "enabled": true,
-  "enableRuleEngine": true,
-  "diagnostics": true,
-  "maxDiagnosticLogs": 8
+  "diagnostics": true
 }
