@@ -1,17 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Continuity Bedrock",
-  "description": "Compiled Continuity rule engine. Connected glass is delegated to BedrockTools.",
+  "title": "Better Grass",
+  "description": "Fancy Better Grass for Minecraft Bedrock.",
   "type": "object",
   "properties": {
-    "version": {"type":"integer", "readOnly":true},
-    "enabled": {"type":"boolean"},
-    "enableRuleEngine": {
-      "type":"boolean",
-      "description":"Enable compiled Continuity .properties rules."
+    "version": {
+      "type": "integer",
+      "readOnly": true
     },
-    "diagnostics": {"type":"boolean"},
-    "maxDiagnosticLogs": {"type":"integer", "minimum":0, "maximum":32}
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable Fancy Better Grass rendering."
+    },
+    "diagnostics": {
+      "type": "boolean",
+      "description": "Emit one-time renderer diagnostics."
+    }
   },
   "additionalProperties": false
 }
