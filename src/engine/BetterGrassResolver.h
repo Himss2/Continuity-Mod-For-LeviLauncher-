@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace continuity_bedrock::engine {
+namespace better_grass::engine {
 
 class BetterGrassResolver {
 public:
