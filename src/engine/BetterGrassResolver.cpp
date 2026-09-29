@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace continuity_bedrock::engine {
+namespace better_grass::engine {
 
 namespace {
 
@@ -34,15 +34,15 @@ const TextureUvSet* BetterGrassResolver::process(
         return original;
     }
 
-    // Fancy Better Grass only changes horizontal side faces.
-    // Bedrock face mapping: 0=down, 1=up, 2=north, 3=south, 4=west, 5=east.
+    // Bedrock 1.26.52.3 face mapping:
+    // 0=down, 1=up, 2=north, 3=south, 4=west, 5=east.
     if (face < 2 || face > 5 || !isGrassBlock(block)) {
         return original;
     }
 
-    // OptiFine-style Fancy rule:
-    // the side becomes grass-top only when grass continues one block down
-    // and outward in the direction of the rendered face.
+    // Fancy Better Grass:
+    // only expose a full-grass side when grass continues one block outward
+    // and one block down from the rendered side.
     const BlockPos supportPos = fancySupportPos(pos, face);
     const void* supportBlock = getBlock(blockCache, &supportPos);
 
@@ -50,18 +50,18 @@ const TextureUvSet* BetterGrassResolver::process(
         return original;
     }
 
-    // Resolve the UP face from the block itself, not from the side-face
-    // rendering context. In 1.26.52.3, nullptr graphics makes _getTexture
-    // resolve BlockGraphics from `block`, and forcedVariant=-1 makes it
-    // resolve the native state/variant. This preserves the active vanilla or
-    // resource-pack grass_top mapping without bundling or hardcoding atlas UVs.
+    // Important for resource-pack compatibility:
+    // resolve the UP texture from Minecraft's own BlockGraphics/state path.
+    // Do not inherit the side-face BlockGraphics pointer or forced variant.
+    // nullptr graphics + forcedVariant=-1 tells this 1.26.52.3 _getTexture
+    // implementation to resolve both natively from the grass block itself.
     const TextureUvSet* topTexture = getTexture(
         blockTessellator,
         &pos,
         block,
-        1,      // UP
-        -1,     // native block/state variant
-        nullptr // native BlockGraphics lookup
+        1,       // UP
+        -1,      // native state/variant selection
+        nullptr  // native BlockGraphics resolution
     );
 
     return topTexture ? topTexture : original;
@@ -103,10 +103,10 @@ BlockPos BetterGrassResolver::fancySupportPos(
     BlockPos out{pos.x, pos.y - 1, pos.z};
 
     switch (face) {
-    case 2: --out.z; break; // north
-    case 3: ++out.z; break; // south
-    case 4: --out.x; break; // west
-    case 5: ++out.x; break; // east
+    case 2: --out.z; break;
+    case 3: ++out.z; break;
+    case 4: --out.x; break;
+    case 5: ++out.x; break;
     default: break;
     }
 
