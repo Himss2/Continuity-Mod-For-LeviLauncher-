@@ -3,6 +3,8 @@
 #include <fmt/format.h>
 #include <pl/ModMenu.hpp>
 
+#include <string>
+
 namespace better_grass {
 
 namespace {
