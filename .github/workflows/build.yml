@@ -27,17 +27,44 @@ jobs:
         run: |
           sdkmanager "platforms;android-28" "ndk;28.2.13676358"
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build zip
 
       - name: Build arm64 package
         shell: pwsh
         run: ./scripts/package.ps1 -Abi arm64-v8a
+
+      - name: Create clean standalone source ZIP
+        run: |
+          ROOT="Better-Grass-for-LeviLauncher"
+          OUT="Better-Grass-for-LeviLauncher-0.1.0-fancy-poc-full-repo.zip"
+
+          rm -rf "$ROOT" "$OUT"
+          mkdir -p "$ROOT/.github/workflows" "$ROOT/config" "$ROOT/docs" "$ROOT/scripts"
+          mkdir -p "$ROOT/src/engine" "$ROOT/src/mod"
+
+          cp .clang-format .gitattributes .gitignore CMakeLists.txt LICENSE README.md              THIRD_PARTY_NOTICES.md TODO.md manifest.json.in "$ROOT/"
+          cp .github/workflows/build.yml "$ROOT/.github/workflows/"
+          cp config/config.json config/config.schema.json "$ROOT/config/"
+          cp docs/ARCHITECTURE.md docs/RE_1.26.52.3.md "$ROOT/docs/"
+          cp scripts/package.ps1 scripts/package.sh scripts/verify_signatures.py "$ROOT/scripts/"
+          cp src/main.cpp src/config_generator.cpp "$ROOT/src/"
+          cp src/engine/BetterGrassHook.cpp src/engine/BetterGrassHook.h              src/engine/BetterGrassResolver.cpp src/engine/BetterGrassResolver.h              src/engine/Signatures.cpp src/engine/Signatures.h src/engine/Types.h              "$ROOT/src/engine/"
+          cp src/mod/BetterGrassMod.cpp src/mod/BetterGrassMod.h              src/mod/Config.cpp src/mod/Config.h "$ROOT/src/mod/"
+
+          zip -r "$OUT" "$ROOT"
 
       - name: Upload LeviPack
         uses: actions/upload-artifact@v4
         with:
           name: better-grass
           path: build-*/*.levipack
+          if-no-files-found: error
+
+      - name: Upload clean source
+        uses: actions/upload-artifact@v4
+        with:
+          name: better-grass-source
+          path: Better-Grass-for-LeviLauncher-0.1.0-fancy-poc-full-repo.zip
           if-no-files-found: error
 
       - name: Publish release assets
