@@ -46,6 +46,8 @@ private:
     using FaceFn =
         void (*)(void*, void*, const void*, const Vec3Raw*, const TextureUvSet*);
     using CacheGetBlockFn = const void* (*)(void*, const BlockPos*);
+    using TextureUvCopyCtorFn = void* (*)(void*, const void*);
+    using TextureUvDtorFn = void (*)(void*);
 
     struct FaceHook {
         uintptr_t address{};
@@ -69,32 +71,6 @@ private:
         const void* block,
         const Vec3Raw* position,
         const TextureUvSet* inputTexture
-    );
-
-    bool emitNeighborOverlay(
-        uint8_t face,
-        uint8_t localEdge,
-        bool dualSided,
-        void* blockTessellator,
-        void* tessellator,
-        const void* targetBlock,
-        const void* sourceBlock,
-        const BlockPos& sourcePos,
-        const Vec3Raw& renderPos,
-        const AabbRaw& originalShape
-    );
-
-    void emitJaggedEdge(
-        uint8_t face,
-        uint8_t localEdge,
-        bool dualSided,
-        FaceFn original,
-        void* blockTessellator,
-        void* tessellator,
-        const void* targetBlock,
-        const Vec3Raw& renderPos,
-        const TextureUvSet& sourceTexture,
-        const AabbRaw& originalShape
     );
 
     bool sourceSurroundedOnFourSides(
@@ -123,7 +99,7 @@ private:
         uint8_t face,
         uint8_t localEdge
     );
-    static AabbRaw makeStrip(
+    static AabbRaw makeRegion(
         const AabbRaw& original,
         uint8_t face,
         float u0,
@@ -131,13 +107,14 @@ private:
         float v0,
         float v1
     );
-    static void offsetFace(AabbRaw& shape, uint8_t face, float epsilon);
 
     static PlankOverlayHook* sInstance;
 
     Addresses mAddresses{};
     LegacyCtmHook* mTextureHook{};
     CacheGetBlockFn mGetBlock{};
+    TextureUvCopyCtorFn mTextureCopyCtor{};
+    TextureUvDtorFn mTextureDtor{};
     std::array<FaceHook, 4> mFaces{};
     LogFn mLog;
     std::atomic_bool mEnabled{true};
