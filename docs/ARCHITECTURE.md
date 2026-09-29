@@ -1,39 +1,27 @@
 # Architecture
 
 ```text
-Bundled resource pack
-  terrain_texture.json + 47 CTM debug tiles
-                 |
-                 v
-BlockGraphics::getTextureUVCoordinateSet
-                 |
-             AtlasCache
-                 |
-.properties -> future RuleCompiler -> CTM Resolver
-                                  |
-BlockTessellator::_getTexture ----+
-       |                          |
-       +-- BlockTessellatorCache::getBlock (8 neighbors)
-                                  |
-                         256-mask -> 47 tile
-                                  |
-                          replacement UV pointer
+Minecraft active resource pack / terrain atlas
+                    |
+                    v
+BlockTessellator::_getTexture
+        |                         |
+        | vanilla side           | native UP lookup
+        v                         |
+BetterGrassHook ------------------+
+        |
+        v
+BetterGrassResolver
+        |
+        +-- classify grass_block
+        +-- reject up/down
+        +-- BlockTessellatorCache::getBlock(face + down)
+        |
+        +-- no match -> original side
+        |
+        +-- match -> native UP-face TextureUVCoordinateSet*
 ```
 
-## Current scope
-
-- exact build: Minecraft `1.26.52.3`, arm64
-- safe signature resolution; no hardcoded module base
-- bundled LeviLauncher 1.5.24 resource-pack layout
-- 47-tile Continuity CTM lookup table
-- legacy glass-path detection
-- optional experimental legacy UV replacement
-- dual-pipeline diagnostics
-
-## Next stage
-
-- confirm vanilla glass runtime path from logs
-- if glass is new-pipeline: hook the material/face attribute stage around `SurfaceExtractionStep`
-- compile `.properties` into generic rules (`matchBlocks`, `matchTiles`, `connect=block/tile/state`, faces, orientation)
-- add horizontal/vertical/random/repeat
-- later: compact CTM / overlay / emissive require extra-quad or mesh mutation support
+The mod never copies, edits, or owns `TextureUVCoordinateSet`. It forwards the
+pointer returned by Minecraft. This keeps texture selection tied to the active
+resource pack and avoids relying on the texture structure's opaque internals.
