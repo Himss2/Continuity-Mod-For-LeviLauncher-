@@ -19,8 +19,6 @@ public:
         const BlockPos& pos,
         const void* block,
         uint8_t face,
-        int forcedVariant,
-        const void* graphics,
         const TextureUvSet* original,
         CacheGetBlockFn getBlock,
         GetTextureFn getTexture
