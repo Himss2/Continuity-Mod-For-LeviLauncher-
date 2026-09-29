@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/BetterGrassResolver.h"
 #include "engine/RuleEngine.h"
 #include "engine/Signatures.h"
 #include "engine/Types.h"
@@ -51,6 +52,7 @@ private:
     LogFn mLog;
     Addresses mAddresses{};
     RuleEngine* mRules{};
+    BetterGrassResolver mBetterGrass{};
     GetTextureFn mOriginalGetTexture{};
     RuleEngine::CacheGetBlockFn mCacheGetBlock{};
     RuleEngine::GetTextureUvFn mGetTextureUv{};
@@ -59,6 +61,7 @@ private:
     std::atomic<uint64_t> mGetTextureCalls{};
     std::atomic<uint64_t> mReplacedFaces{};
     std::atomic_bool mLoggedFirstHit{};
+    std::atomic_bool mLoggedFirstBetterGrass{};
     std::atomic_bool mRuleEngineEnabled{true};
 };
 
