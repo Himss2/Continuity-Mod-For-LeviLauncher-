@@ -30,6 +30,7 @@ bool LegacyCtmHook::install(
     mGetTextureCalls.store(0, std::memory_order_relaxed);
     mReplacedFaces.store(0, std::memory_order_relaxed);
     mLoggedFirstHit.store(false, std::memory_order_relaxed);
+    mLoggedFirstBetterGrass.store(false, std::memory_order_relaxed);
     mRuleEngineEnabled.store(config.enableRuleEngine, std::memory_order_relaxed);
 
     sInstance = this;
@@ -103,14 +104,41 @@ const TextureUvSet* LegacyCtmHook::onGetTexture(
         || !pos
         || !block
         || !mRuleEngineEnabled.load(std::memory_order_relaxed)
-        || !mRules
-        || !mCacheGetBlock
-        || !mGetTextureUv) {
+        || !mCacheGetBlock) {
         return original;
     }
 
     auto* blockCache = reinterpret_cast<void*>(
         reinterpret_cast<uintptr_t>(self) + kBlockTessellatorCacheOffset_1_26_52_3);
+
+    const auto* betterGrass = mBetterGrass.process(
+        blockCache,
+        self,
+        *pos,
+        block,
+        face,
+        forcedVariant,
+        graphics,
+        original,
+        reinterpret_cast<BetterGrassResolver::CacheGetBlockFn>(mCacheGetBlock),
+        reinterpret_cast<BetterGrassResolver::GetTextureFn>(mOriginalGetTexture));
+
+    if (betterGrass != original) {
+        mReplacedFaces.fetch_add(1, std::memory_order_relaxed);
+
+        if (!mLoggedFirstBetterGrass.exchange(true, std::memory_order_relaxed)
+            && mLog) {
+            mLog(
+                "BETTER GRASS HIT: fancy diagonal-down surface continuation "
+                "replaced a grass side with the live vanilla top texture");
+        }
+
+        return betterGrass;
+    }
+
+    if (!mRules || !mGetTextureUv) {
+        return original;
+    }
 
     const auto* replacement = mRules->process(
         blockCache,
