@@ -113,10 +113,6 @@ public:
         copyCtor(mStorage.data(), source);
         mConstructed = true;
 
-        mU0 = field<float>(mStorage.data(), kTextureU0);
-        mV0 = field<float>(mStorage.data(), kTextureV0);
-        mU1 = field<float>(mStorage.data(), kTextureU1);
-        mV1 = field<float>(mStorage.data(), kTextureV1);
     }
 
     ~TextureClone() {
@@ -134,28 +130,14 @@ public:
         return mConstructed;
     }
 
-    TextureUvSet* setRect(
-        float u0,
-        float u1,
-        float v0,
-        float v1
-    ) {
+    TextureUvSet* texture() {
         if (!mConstructed) return nullptr;
 
-        u0 = std::clamp(u0, 0.0f, 1.0f);
-        u1 = std::clamp(u1, 0.0f, 1.0f);
-        v0 = std::clamp(v0, 0.0f, 1.0f);
-        v1 = std::clamp(v1, 0.0f, 1.0f);
-
-        field<float>(mStorage.data(), kTextureU0) = lerp(mU0, mU1, u0);
-        field<float>(mStorage.data(), kTextureU1) = lerp(mU0, mU1, u1);
-        field<float>(mStorage.data(), kTextureV0) = lerp(mV0, mV1, v0);
-        field<float>(mStorage.data(), kTextureV1) = lerp(mV0, mV1, v1);
-
-        // Partial UV rectangles must not be randomly rotated by isotropic-face
-        // handling. BedrockTools applies the same rule to cropped glass UVs.
+        // Geometry subdivision already makes BlockTessellator select the
+        // corresponding portion of the source texture. Do not crop UV a
+        // second time here. Only disable isotropic random rotation so the
+        // plank rows stay aligned across the split regions.
         field<uint8_t>(mStorage.data(), kTextureIsotropic) = 0;
-
         return reinterpret_cast<TextureUvSet*>(mStorage.data());
     }
 
@@ -165,10 +147,6 @@ private:
 
     DtorFn mDtor{};
     bool mConstructed{};
-    float mU0{};
-    float mV0{};
-    float mU1{};
-    float mV1{};
 };
 
 }
@@ -491,13 +469,8 @@ void PlankOverlayHook::onFace(
             return;
         }
 
-        TextureUvSet* cropped = texture.setRect(
-            u0,
-            u1,
-            v0,
-            v1);
-
-        if (!cropped) return;
+        TextureUvSet* safeTexture = texture.texture();
+        if (!safeTexture) return;
 
         *shape = makeRegion(
             originalShape,
@@ -512,7 +485,7 @@ void PlankOverlayHook::onFace(
             tessellator,
             block,
             position,
-            cropped);
+            safeTexture);
     };
 
     // No face is drawn twice. Each 4px-high band is partitioned into:
@@ -576,7 +549,7 @@ void PlankOverlayHook::onFace(
                 ? std::string(blockFullName(rightSource))
                 : "none")
             + ", face=" + std::to_string(face)
-            + ", coplanarSplit=true");
+            + ", coplanarSplit=true, uvCrop=geometry-only");
     }
 }
 
